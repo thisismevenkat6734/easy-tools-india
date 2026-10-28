@@ -4,7 +4,7 @@
   "short_name": "EasyTools",
   "description": "Free online tools for images, PDFs, calculations and text.",
   "lang": "en",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -35,3 +35,4 @@
     }
   ]
 }
+
