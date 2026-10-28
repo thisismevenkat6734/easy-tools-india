@@ -1,0 +1,152 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Count words, characters, sentences and paragraphs, and estimate reading time with this free online word counter.">
+  <meta name="robots" content="index,follow">
+  <title>Free Word Counter Online | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:850px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:20px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field textarea{box-sizing:border-box;width:100%;min-height:240px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font:inherit;line-height:1.6;resize:vertical}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+    .action-button{border:0;border-radius:9px;padding:11px 17px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .stats-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:22px 0}
+    .stat-card{padding:16px 10px;text-align:center;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;overflow-wrap:anywhere}
+    .stat-number{display:block;font-size:1.6rem;font-weight:700;color:#2563eb}
+    .stat-label{display:block;font-size:.9rem;color:#475569;margin-top:4px}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    @media(max-width:480px){.tool-workspace{padding:16px}.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stat-number{font-size:1.35rem}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Word Counter</h1>
+      <p>Count words and characters, check sentences and paragraphs, and estimate how long your text takes to read.</p>  <div class="field">
+    <label for="text-input">Enter or paste your text</label>
+    <textarea id="text-input" placeholder="Start typing or paste your text here..." spellcheck="true"></textarea>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="copy-button" type="button">Copy Text</button>
+    <button class="action-button secondary-button" id="clear-button" type="button">Clear Text</button>
+  </div>
+
+  <section class="stats-grid" aria-label="Text statistics" aria-live="polite">
+    <div class="stat-card"><span class="stat-number" id="word-count">0</span><span class="stat-label">Words</span></div>
+    <div class="stat-card"><span class="stat-number" id="char-count">0</span><span class="stat-label">Characters</span></div>
+    <div class="stat-card"><span class="stat-number" id="char-no-space">0</span><span class="stat-label">Characters without spaces</span></div>
+    <div class="stat-card"><span class="stat-number" id="sentence-count">0</span><span class="stat-label">Sentences (estimated)</span></div>
+    <div class="stat-card"><span class="stat-number" id="paragraph-count">0</span><span class="stat-label">Paragraphs</span></div>
+    <div class="stat-card"><span class="stat-number" id="reading-time">0 sec</span><span class="stat-label">Estimated reading time</span></div>
+  </section>
+
+  <p class="hint">Reading time is estimated at 200 words per minute. Sentence counting is approximate and may vary for abbreviations, web addresses, and unusual punctuation.</p>
+  <p id="status" class="hint" role="status" aria-live="polite"></p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const textInput = document.getElementById("text-input");
+      const status = document.getElementById("status");
+
+      function countWords(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return 0;
+
+        if (typeof Intl !== "undefined" && Intl.Segmenter) {
+          const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+          let count = 0;
+          for (const part of segmenter.segment(trimmed)) {
+            if (part.isWordLike) count++;
+          }
+          return count;
+        }
+
+        return (trimmed.match(/\S+/g) || []).length;
+      }
+
+      function countSentences(text) {
+        const trimmed = text.trim();
+        if (!trimmed) return 0;
+        const matches = trimmed.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/g);
+        return matches ? matches.filter(part => part.trim().length > 0).length : 0;
+      }
+
+      function updateStats() {
+        const text = textInput.value;
+        const words = countWords(text);
+        const characters = Array.from(text).length;
+        const charactersWithoutWhitespace = Array.from(text.replace(/\s/g, "")).length;
+        const paragraphs = text.trim()
+          ? text.trim().split(/\n\s*\n/).filter(part => part.trim()).length
+          : 0;
+        const sentences = countSentences(text);
+
+        document.getElementById("word-count").textContent = words.toLocaleString("en-IN");
+        document.getElementById("char-count").textContent = characters.toLocaleString("en-IN");
+        document.getElementById("char-no-space").textContent = charactersWithoutWhitespace.toLocaleString("en-IN");
+        document.getElementById("sentence-count").textContent = sentences.toLocaleString("en-IN");
+        document.getElementById("paragraph-count").textContent = paragraphs.toLocaleString("en-IN");
+
+        const seconds = Math.ceil(words / 200 * 60);
+        let readingTime = "0 sec";
+        if (seconds >= 60) {
+          const minutes = Math.floor(seconds / 60);
+          const remainingSeconds = seconds % 60;
+          readingTime = minutes + " min" + (remainingSeconds ? " " + remainingSeconds + " sec" : "");
+        } else if (seconds > 0) {
+          readingTime = seconds + " sec";
+        }
+        document.getElementById("reading-time").textContent = readingTime;
+      }
+
+      textInput.addEventListener("input", updateStats);
+
+      document.getElementById("clear-button").addEventListener("click", () => {
+        textInput.value = "";
+        updateStats();
+        status.textContent = "Text cleared.";
+        textInput.focus();
+      });
+
+      document.getElementById("copy-button").addEventListener("click", async () => {
+        status.textContent = "";
+        if (!textInput.value) {
+          status.textContent = "There is no text to copy.";
+          return;
+        }
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(textInput.value);
+          } else {
+            textInput.focus();
+            textInput.select();
+            const copied = document.execCommand("copy");
+            textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+            if (!copied) throw new Error("Copy command was not successful.");
+          }
+          status.textContent = "Text copied to clipboard.";
+        } catch (error) {
+          status.textContent = "Copy was blocked by your browser. Select the text and copy it manually.";
+        }
+      });
+
+      updateStats();
+    })();
+  </script></body>
+</html>
