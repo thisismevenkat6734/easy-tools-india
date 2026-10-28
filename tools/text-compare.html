@@ -1,0 +1,243 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Compare two text documents online and identify added, removed and unchanged lines with this free text comparison tool.">
+  <meta name="robots" content="index,follow">
+  <title>Free Text Compare Tool | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:1000px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .inputs-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .field{margin:18px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field textarea{box-sizing:border-box;width:100%;min-height:220px;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit;line-height:1.5;resize:vertical}
+    .options{display:flex;flex-wrap:wrap;gap:16px;margin:16px 0}
+    .options label{display:flex;gap:8px;align-items:center}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+    .action-button{border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .status{margin:12px 0;color:#475569;font-size:.95rem;line-height:1.5}
+    .summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:18px 0}
+    .summary-card{padding:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}
+    .summary-number{display:block;font-size:1.5rem;font-weight:700}
+    .added-number{color:#166534}.removed-number{color:#b91c1c}.same-number{color:#475569}
+    .diff-output{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+    .diff-line{display:flex;gap:10px;padding:9px 12px;border-bottom:1px solid #e2e8f0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.9rem}
+    .diff-line:last-child{border-bottom:0}
+    .line-marker{flex:0 0 20px;font-weight:700}
+    .diff-added{background:#f0fdf4;color:#166534}
+    .diff-removed{background:#fef2f2;color:#991b1b}
+    .diff-same{background:#fff;color:#334155}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    @media(max-width:650px){.tool-workspace{padding:16px}.inputs-grid{grid-template-columns:1fr}.summary-grid{gap:6px}.summary-card{padding:10px 6px}.summary-number{font-size:1.25rem}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Text Compare Tool</h1>
+      <p>Compare two versions of text to see which lines were added, removed or left unchanged.</p>  <div class="inputs-grid">
+    <div class="field">
+      <label for="text-a">Original text</label>
+      <textarea id="text-a" placeholder="Paste the original text here..."></textarea>
+    </div>
+    <div class="field">
+      <label for="text-b">Modified text</label>
+      <textarea id="text-b" placeholder="Paste the updated text here..."></textarea>
+    </div>
+  </div>
+
+  <div class="options">
+    <label><input type="checkbox" id="ignore-case"> Ignore letter case</label>
+    <label><input type="checkbox" id="ignore-space"> Ignore leading and trailing spaces</label>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="compare-button" type="button">Compare Texts</button>
+    <button class="action-button secondary-button" id="swap-button" type="button">Swap Texts</button>
+    <button class="action-button secondary-button" id="clear-button" type="button">Clear All</button>
+    <button class="action-button secondary-button" id="download-button" type="button" disabled>Download Comparison</button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite">Enter both texts and select Compare Texts.</p>
+
+  <section id="comparison" hidden>
+    <div class="summary-grid">
+      <div class="summary-card"><span class="summary-number added-number" id="added-count">0</span>Added lines</div>
+      <div class="summary-card"><span class="summary-number removed-number" id="removed-count">0</span>Removed lines</div>
+      <div class="summary-card"><span class="summary-number same-number" id="same-count">0</span>Unchanged lines</div>
+    </div>
+
+    <h2>Comparison results</h2>
+    <p class="hint">Green lines are additions; red lines are removals. This is a line-based comparison, so edits to a line may appear as one removal and one addition.</p>
+    <div id="diff-output" class="diff-output" aria-label="Text differences"></div>
+  </section>
+
+  <p class="hint">Your text is compared locally in your browser and is not uploaded to an EasyTools India server.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const inputA = document.getElementById("text-a");
+      const inputB = document.getElementById("text-b");
+      const ignoreCase = document.getElementById("ignore-case");
+      const ignoreSpace = document.getElementById("ignore-space");
+      const comparison = document.getElementById("comparison");
+      const output = document.getElementById("diff-output");
+      const status = document.getElementById("status");
+      const downloadButton = document.getElementById("download-button");
+
+      let lastReport = "";
+
+      function normalize(line) {
+        let value = ignoreSpace.checked ? line.trim() : line;
+        if (ignoreCase.checked) value = value.toLocaleLowerCase();
+        return value;
+      }
+
+      // Build a longest-common-subsequence table for line-level differences.
+      function makeDiff(original, modified) {
+        const a = original.split(/\r\n|\r|\n/);
+        const b = modified.split(/\r\n|\r|\n/);
+        const n = a.length;
+        const m = b.length;
+
+        // Bound memory and processing time for very large inputs.
+        if ((n + 1) * (m + 1) > 2000000) {
+          throw new Error("These texts contain too many lines for this comparison. Try comparing smaller sections.");
+        }
+
+        const dp = Array.from({length: n + 1}, () => new Uint32Array(m + 1));
+
+        for (let i = n - 1; i >= 0; i--) {
+          for (let j = m - 1; j >= 0; j--) {
+            dp[i][j] = normalize(a[i]) === normalize(b[j])
+              ? dp[i + 1][j + 1] + 1
+              : Math.max(dp[i + 1][j], dp[i][j + 1]);
+          }
+        }
+
+        const changes = [];
+        let i = 0;
+        let j = 0;
+
+        while (i < n && j < m) {
+          if (normalize(a[i]) === normalize(b[j])) {
+            changes.push({type: "same", text: b[j]});
+            i++;
+            j++;
+          } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+            changes.push({type: "removed", text: a[i]});
+            i++;
+          } else {
+            changes.push({type: "added", text: b[j]});
+            j++;
+          }
+        }
+
+        while (i < n) changes.push({type: "removed", text: a[i++]});
+        while (j < m) changes.push({type: "added", text: b[j++]});
+
+        return changes;
+      }
+
+      function compare() {
+        output.replaceChildren();
+        comparison.hidden = true;
+        downloadButton.disabled = true;
+        lastReport = "";
+
+        if (!inputA.value.trim() && !inputB.value.trim()) {
+          status.textContent = "Please enter text in at least one box.";
+          return;
+        }
+
+        try {
+          const changes = makeDiff(inputA.value, inputB.value);
+          const counts = {added: 0, removed: 0, same: 0};
+          const reportLines = [];
+
+          changes.forEach(change => {
+            counts[change.type]++;
+
+            const line = document.createElement("div");
+            line.className = "diff-line diff-" + change.type;
+
+            const marker = document.createElement("span");
+            marker.className = "line-marker";
+            marker.textContent = change.type === "added" ? "+" :
+              change.type === "removed" ? "−" : " ";
+
+            const text = document.createElement("span");
+            text.textContent = change.text || " ";
+
+            line.append(marker, text);
+            output.appendChild(line);
+
+            const prefix = change.type === "added" ? "+ " :
+              change.type === "removed" ? "- " : "  ";
+            reportLines.push(prefix + change.text);
+          });
+
+          document.getElementById("added-count").textContent = counts.added;
+          document.getElementById("removed-count").textContent = counts.removed;
+          document.getElementById("same-count").textContent = counts.same;
+
+          lastReport = reportLines.join("\n");
+          comparison.hidden = false;
+          downloadButton.disabled = false;
+          status.textContent = "Comparison complete.";
+        } catch (error) {
+          status.textContent = error.message || "Could not compare these texts.";
+        }
+      }
+
+      document.getElementById("compare-button").addEventListener("click", compare);
+
+      document.getElementById("swap-button").addEventListener("click", () => {
+        const oldA = inputA.value;
+        inputA.value = inputB.value;
+        inputB.value = oldA;
+        status.textContent = "Texts swapped. Select Compare Texts to update the results.";
+      });
+
+      document.getElementById("clear-button").addEventListener("click", () => {
+        inputA.value = "";
+        inputB.value = "";
+        output.replaceChildren();
+        comparison.hidden = true;
+        downloadButton.disabled = true;
+        lastReport = "";
+        status.textContent = "All text fields cleared.";
+      });
+
+      downloadButton.addEventListener("click", () => {
+        if (!lastReport) {
+          status.textContent = "Compare the texts first.";
+          return;
+        }
+
+        const blob = new Blob([lastReport], {type: "text/plain;charset=utf-8"});
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "text-comparison.txt";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        status.textContent = "Comparison report download started.";
+      });
+    })();
+  </script></body>
+</html>
