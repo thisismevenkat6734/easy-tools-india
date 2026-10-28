@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Merge multiple PDF files into one document in your browser. Reorder files and download the merged PDF.">
+  <meta name="theme-color" content="#2563eb">
+  <title>PDF Merger | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .merge-tool{width:min(94%,800px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .merge-tool h1{margin-top:0}
+    .merge-tool label{display:block;margin:14px 0 6px;font-weight:600}
+    .merge-tool input[type=file]{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .merge-tool button,.merge-tool .download{display:inline-block;margin:8px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .merge-tool button:disabled{opacity:.5;cursor:not-allowed}
+    .file-list{display:grid;gap:10px;margin-top:16px}
+    .file-card{padding:14px;border:1px solid #dbe3ef;border-radius:10px;overflow-wrap:anywhere}
+    .file-card button{padding:7px 10px;font-size:.9rem}
+    .note{padding:12px;background:#eff6ff;border-radius:8px}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    @media(max-width:480px){.merge-tool{padding:15px}}
+  </style>
+</head>
+<body>
+  <main class="merge-tool">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>PDF Merger</h1>
+    <p>Combine multiple PDF documents into one downloadable PDF.</p>
+    <p class="note">PDF files are processed locally in your browser. They are not uploaded by this tool. Password-protected or damaged PDFs may not be supported.</p>
+
+    <label for="pdf-files">Choose PDF files (up to 20 files)</label>
+    <input id="pdf-files" type="file" accept=".pdf,application/pdf" multiple>
+
+    <div id="file-list" class="file-list"></div>
+    <p id="status" class="status" role="status" aria-live="polite">Choose at least two PDF files.</p>
+    <button id="merge-button" type="button" disabled>Merge PDFs</button>
+    <button id="clear-button" type="button">Clear files</button>
+    <a id="download-link" class="download" hidden>Download merged PDF</a>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" referrerpolicy="no-referrer"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const input = $("pdf-files");
+      const list = $("file-list");
+      const status = $("status");
+      const mergeButton = $("merge-button");
+      const clearButton = $("clear-button");
+      const downloadLink = $("download-link");
+
+      const MAX_FILES = 20;
+      const MAX_FILE_SIZE = 25 * 1024 * 1024;
+      const MAX_TOTAL_SIZE = 100 * 1024 * 1024;
+
+      let files = [];
+      let busy = false;
+      let generation = 0;
+      let outputUrl = null;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function releaseOutput() {
+        if (outputUrl) URL.revokeObjectURL(outputUrl);
+        outputUrl = null;
+        downloadLink.removeAttribute("href");
+        downloadLink.removeAttribute("download");
+        downloadLink.hidden = true;
+        downloadLink.textContent = "";
+      }
+
+      function updateButtons() {
+        mergeButton.disabled = busy || files.length < 2;
+        clearButton.disabled = busy;
+      }
+
+      function renderList() {
+        list.replaceChildren();
+
+        files.forEach((file, index) => {
+          const card = document.createElement("div");
+          card.className = "file-card";
+
+          const title = document.createElement("strong");
+          title.textContent = `${index + 1}. ${file.name}`;
+
+          const info = document.createElement("p");
+          info.textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+
+          const up = document.createElement("button");
+          up.type = "button";
+          up.textContent = "Move up";
+          up.disabled = busy || index === 0;
+          up.addEventListener("click", () => moveFile(index, -1));
+
+          const down = document.createElement("button");
+          down.type = "button";
+          down.textContent = "Move down";
+          down.disabled = busy || index === files.length - 1;
+          down.addEventListener("click", () => moveFile(index, 1));
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "Remove";
+          remove.disabled = busy;
+          remove.addEventListener("click", () => removeFile(index));
+
+          card.append(title, info, up, down, remove);
+          list.append(card);
+        });
+
+        updateButtons();
+      }
+
+      function moveFile(index, direction) {
+        if (busy) return;
+        const target = index + direction;
+        if (target < 0 || target >= files.length) return;
+
+        [files[index], files[target]] = [files[target], files[index]];
+        releaseOutput();
+        renderList();
+        say("File order updated.");
+      }
+
+      function removeFile(index) {
+        if (busy) return;
+        files.splice(index, 1);
+        releaseOutput();
+        renderList();
+        say(`${files.length} PDF file(s) selected.`);
+      }
+
+      function clearFiles() {
+        if (busy) return;
+        generation++;
+        files = [];
+        input.value = "";
+        releaseOutput();
+        renderList();
+        say("Choose at least two PDF files.");
+      }
+
+      input.addEventListener("change", () => {
+        if (busy) return;
+        const selected = Array.from(input.files || []);
+        input.value = "";
+        if (!selected.length) return;
+
+        releaseOutput();
+
+        if (files.length + selected.length > MAX_FILES) {
+          say(`Choose no more than ${MAX_FILES} files in total.`, "error");
+          return;
+        }
+
+        const invalid = selected.find(file =>
+          file.type !== "application/pdf" &&
+          !file.name.toLowerCase().endsWith(".pdf")
+        );
+
+        if (invalid) {
+          say(`${invalid.name} is not a PDF file.`, "error");
+          return;
+        }
+
+        if (selected.some(file => !file.size || file.size > MAX_FILE_SIZE)) {
+          say("Each PDF must be non-empty and no larger than 25 MB.", "error");
+          return;
+        }
+
+        const total = [...files, ...selected].reduce((sum, file) => sum + file.size, 0);
+        if (total > MAX_TOTAL_SIZE) {
+          say("The combined PDF file size must not exceed 100 MB.", "error");
+          return;
+        }
+
+        files.push(...selected);
+        renderList();
+        say(`${files.length} PDF file(s) ready. Arrange the order, then merge.`, "success");
+      });
+
+      async function mergePdfs() {
+        if (busy || files.length < 2) return;
+
+        if (!window.PDFLib || !window.PDFLib.PDFDocument) {
+          say("The PDF library could not load. Check your internet connection and try again.", "error");
+          return;
+        }
+
+        busy = true;
+        const id = ++generation;
+        releaseOutput();
+        renderList();
+        say("Merging PDF files…");
+
+        try {
+          const { PDFDocument } = window.PDFLib;
+          const merged = await PDFDocument.create();
+
+          for (let i = 0; i < files.length; i++) {
+            if (id !== generation) return;
+
+            const file = files[i];
+            say(`Processing file ${i + 1} of ${files.length}: ${file.name}`);
+
+            const bytes = await file.arrayBuffer();
+            const source = await PDFDocument.load(bytes, {
+              ignoreEncryption: false,
+              updateMetadata: false
+            });
+
+            const pageIndices = source.getPageIndices();
+            const copiedPages = await merged.copyPages(source, pageIndices);
+            copiedPages.forEach(page => merged.addPage(page));
+          }
+
+          if (id !== generation) return;
+
+          if (merged.getPageCount() === 0) {
+            throw new Error("No pages were found in the selected PDFs.");
+          }
+
+          const outputBytes = await merged.save();
+          const blob = new Blob([outputBytes], { type: "application/pdf" });
+          outputUrl = URL.createObjectURL(blob);
+
+          downloadLink.href = outputUrl;
+          downloadLink.download = "easytools-merged.pdf";
+          downloadLink.textContent = `Download merged PDF (${(blob.size / 1024 / 1024).toFixed(2)} MB)`;
+          downloadLink.hidden = false;
+
+          say(`Successfully merged ${files.length} files into ${merged.getPageCount()} pages.`, "success");
+        } catch (error) {
+          const message = String(error && error.message || "");
+          say(
+            /encrypt|password/i.test(message)
+              ? "A PDF may be password-protected. Unlock it first and try again."
+              : "Could not merge these PDFs. One file may be damaged or unsupported. Please check the files and try again.",
+            "error"
+          );
+        } finally {
+          if (id === generation) {
+            busy = false;
+            renderList();
+          }
+        }
+      }
+
+      mergeButton.addEventListener("click", mergePdfs);
+      clearButton.addEventListener("click", clearFiles);
+
+      window.addEventListener("pagehide", () => {
+        if (outputUrl) URL.revokeObjectURL(outputUrl);
+      });
+
+      updateButtons();
+    })();
+  </script>
+</body>
+</html>
