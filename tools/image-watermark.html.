@@ -1,0 +1,339 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Add a custom text watermark to images online for free. Adjust position, size, colour and opacity, then download your watermarked image.">
+  <meta name="robots" content="index,follow">
+  <title>Free Image Watermark Tool | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:850px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:18px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field input,.field select{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit;background:#fff}
+    .field input[type="color"]{height:48px;padding:5px}
+    .field input[type="range"]{padding:0}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .action-button{border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .preview-wrap{margin-top:22px;padding:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;text-align:center}
+    canvas{display:block;max-width:100%;height:auto;margin:auto}
+    .status{margin-top:14px;padding:12px;border-radius:8px;background:#f1f5f9;overflow-wrap:anywhere}
+    .status.error{background:#fef2f2;color:#991b1b}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    [hidden]{display:none!important}
+    @media(max-width:480px){.tool-workspace{padding:16px}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Image Watermark Tool</h1>
+      <p>Add your own text watermark to protect or brand your images.</p>  <div class="field">
+    <label for="image-file">Choose an image</label>
+    <input id="image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
+  </div>
+
+  <div class="field">
+    <label for="watermark-text">Watermark text</label>
+    <input id="watermark-text" type="text" maxlength="100" value="© Your Name" placeholder="Enter watermark text">
+  </div>
+
+  <div class="field">
+    <label for="position">Watermark position</label>
+    <select id="position">
+      <option value="bottom-right">Bottom right</option>
+      <option value="bottom-left">Bottom left</option>
+      <option value="top-right">Top right</option>
+      <option value="top-left">Top left</option>
+      <option value="center">Center</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="size">Text size: <span id="size-label">5%</span> of image width</label>
+    <input id="size" type="range" min="2" max="12" step="1" value="5">
+  </div>
+
+  <div class="field">
+    <label for="opacity">Opacity: <span id="opacity-label">50%</span></label>
+    <input id="opacity" type="range" min="10" max="100" step="5" value="50">
+  </div>
+
+  <div class="field">
+    <label for="watermark-color">Text colour</label>
+    <input id="watermark-color" type="color" value="#ffffff">
+  </div>
+
+  <div class="field">
+    <label for="output-format">Download format</label>
+    <select id="output-format">
+      <option value="image/png">PNG</option>
+      <option value="image/jpeg">JPEG</option>
+      <option value="image/webp">WebP</option>
+    </select>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="apply-button" type="button">Apply Watermark</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+    <button class="action-button" id="download-button" type="button" hidden>Download Image</button>
+  </div>
+
+  <div id="status" class="status" role="status" aria-live="polite">Choose an image to begin.</div>
+
+  <div class="preview-wrap" id="preview-wrap" hidden>
+    <canvas id="preview-canvas"></canvas>
+  </div>
+
+  <p class="hint">The original image is not uploaded to an EasyTools India server. Animated GIFs are processed as a single still image. Very large images may require substantial device memory.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const fileInput = document.getElementById("image-file");
+      const textInput = document.getElementById("watermark-text");
+      const positionInput = document.getElementById("position");
+      const sizeInput = document.getElementById("size");
+      const opacityInput = document.getElementById("opacity");
+      const colorInput = document.getElementById("watermark-color");
+      const formatInput = document.getElementById("output-format");
+      const canvas = document.getElementById("preview-canvas");
+      const ctx = canvas.getContext("2d");
+      const previewWrap = document.getElementById("preview-wrap");
+      const downloadButton = document.getElementById("download-button");
+      const status = document.getElementById("status");
+
+      let sourceImage = null;
+      let sourceUrl = null;
+      let downloadUrl = null;
+
+      function clearDownload() {
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+          downloadUrl = null;
+        }
+        downloadButton.hidden = true;
+      }
+
+      function setStatus(message, error = false) {
+        status.textContent = message;
+        status.className = "status" + (error ? " error" : "");
+      }
+
+      function releaseSource() {
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+        sourceImage = null;
+      }
+
+      function updateLabels() {
+        document.getElementById("size-label").textContent = sizeInput.value + "%";
+        document.getElementById("opacity-label").textContent = opacityInput.value + "%";
+      }
+
+      sizeInput.addEventListener("input", updateLabels);
+      opacityInput.addEventListener("input", updateLabels);
+
+      fileInput.addEventListener("change", async () => {
+        clearDownload();
+        releaseSource();
+        previewWrap.hidden = true;
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          setStatus("Choose an image to begin.");
+          return;
+        }
+
+        if (!file.type.startsWith("image/")) {
+          fileInput.value = "";
+          setStatus("Please select a valid image file.", true);
+          return;
+        }
+
+        try {
+          sourceUrl = URL.createObjectURL(file);
+          const image = new Image();
+          image.src = sourceUrl;
+          await image.decode();
+
+          if (!image.naturalWidth || !image.naturalHeight) {
+            throw new Error("This image could not be opened.");
+          }
+
+          if (image.naturalWidth * image.naturalHeight > 40000000) {
+            throw new Error("This image is too large for this tool. Please choose an image with 40 megapixels or fewer.");
+          }
+
+          sourceImage = image;
+          setStatus("Image loaded: " + image.naturalWidth + " × " + image.naturalHeight + ".");
+          renderPreview();
+        } catch (error) {
+          releaseSource();
+          fileInput.value = "";
+          setStatus(error.message || "Unable to load this image.", true);
+        }
+      });
+
+      function renderPreview() {
+        clearDownload();
+
+        if (!sourceImage) {
+          previewWrap.hidden = true;
+          return;
+        }
+
+        const width = sourceImage.naturalWidth;
+        const height = sourceImage.naturalHeight;
+
+        canvas.width = width;
+        canvas.height = height;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(sourceImage, 0, 0, width, height);
+
+        const text = textInput.value.trim();
+        if (text) {
+          const fontSize = Math.max(12, Math.round(width * Number(sizeInput.value) / 100));
+          const padding = Math.max(12, Math.round(Math.min(width, height) * 0.025));
+
+          ctx.save();
+          ctx.font = "bold " + fontSize + "px Arial, sans-serif";
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "center";
+          ctx.globalAlpha = Number(opacityInput.value) / 100;
+          ctx.fillStyle = colorInput.value;
+
+          const metrics = ctx.measureText(text);
+          const maxTextWidth = Math.max(1, width - padding * 2);
+          let drawSize = fontSize;
+
+          if (metrics.width > maxTextWidth) {
+            drawSize = Math.max(8, fontSize * maxTextWidth / metrics.width);
+            ctx.font = "bold " + drawSize + "px Arial, sans-serif";
+          }
+
+          const textWidth = ctx.measureText(text).width;
+          let x = width / 2;
+          let y = height / 2;
+
+          switch (positionInput.value) {
+            case "top-left":
+              ctx.textAlign = "left";
+              x = padding;
+              y = padding + drawSize / 2;
+              break;
+            case "top-right":
+              ctx.textAlign = "right";
+              x = width - padding;
+              y = padding + drawSize / 2;
+              break;
+            case "bottom-left":
+              ctx.textAlign = "left";
+              x = padding;
+              y = height - padding - drawSize / 2;
+              break;
+            case "bottom-right":
+              ctx.textAlign = "right";
+              x = width - padding;
+              y = height - padding - drawSize / 2;
+              break;
+          }
+
+          const estimatedHeight = drawSize * 1.2;
+          y = Math.max(estimatedHeight / 2, Math.min(height - estimatedHeight / 2, y));
+
+          if (positionInput.value === "center") {
+            x = width / 2;
+          }
+
+          ctx.fillText(text, x, y, maxTextWidth);
+          ctx.restore();
+        }
+
+        previewWrap.hidden = false;
+      }
+
+      document.getElementById("apply-button").addEventListener("click", () => {
+        if (!sourceImage) {
+          setStatus("Please choose an image first.", true);
+          return;
+        }
+
+        renderPreview();
+
+        const mime = formatInput.value;
+        canvas.toBlob(blob => {
+          if (!blob) {
+            setStatus("Could not create the output image. Try PNG format.", true);
+            return;
+          }
+
+          clearDownload();
+          downloadUrl = URL.createObjectURL(blob);
+          downloadButton.hidden = false;
+          setStatus("Watermark applied. Preview the image and download when ready.");
+        }, mime, 0.92);
+      });
+
+      [textInput, positionInput, sizeInput, opacityInput, colorInput].forEach(control => {
+        control.addEventListener("input", () => {
+          if (sourceImage) {
+            renderPreview();
+            setStatus("Preview updated. Select Apply Watermark to prepare the download.");
+          }
+        });
+      });
+
+      formatInput.addEventListener("change", clearDownload);
+
+      downloadButton.addEventListener("click", () => {
+        if (!downloadUrl) return;
+
+        const extension = formatInput.value === "image/jpeg" ? "jpg" :
+          formatInput.value === "image/webp" ? "webp" : "png";
+
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = "watermarked-image." + extension;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      });
+
+      document.getElementById("reset-button").addEventListener("click", () => {
+        clearDownload();
+        releaseSource();
+        fileInput.value = "";
+        textInput.value = "© Your Name";
+        positionInput.value = "bottom-right";
+        sizeInput.value = "5";
+        opacityInput.value = "50";
+        colorInput.value = "#ffffff";
+        formatInput.value = "image/png";
+        canvas.width = 0;
+        canvas.height = 0;
+        previewWrap.hidden = true;
+        updateLabels();
+        setStatus("Choose an image to begin.");
+      });
+
+      window.addEventListener("beforeunload", () => {
+        clearDownload();
+        releaseSource();
+      });
+
+      updateLabels();
+    })();
+  </script></body>
+</html>
