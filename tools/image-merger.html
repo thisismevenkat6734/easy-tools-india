@@ -1,0 +1,341 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Combine multiple images into one image online for free. Choose a layout and download your combined image.">
+  <meta name="robots" content="index,follow">
+  <title>Free Image Merger | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:800px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:18px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field input,.field select{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit;background:#fff}
+    .action-button{border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:18px 0}
+    .preview-card{padding:10px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+    .preview-card img{width:100%;height:150px;object-fit:contain;background:#f8fafc}
+    .preview-card p{font-size:.9rem;overflow-wrap:anywhere}
+    .status{margin-top:14px;padding:12px;background:#f1f5f9;border-radius:8px;overflow-wrap:anywhere}
+    .status.error{background:#fef2f2;color:#991b1b}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    canvas{display:none;max-width:100%;height:auto;margin-top:18px;border:1px solid #e2e8f0;border-radius:8px}
+    [hidden]{display:none!important}
+    @media(max-width:480px){.tool-workspace{padding:16px}.preview-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Image Merger</h1>
+      <p>Combine multiple images into one image using a horizontal, vertical, or grid layout.</p>  <div class="field">
+    <label for="image-files">Select images (2–20 files)</label>
+    <input id="image-files" type="file" accept="image/*" multiple>
+    <p class="hint">Supported formats depend on your browser. Choose up to 20 images.</p>
+  </div>
+
+  <div class="field">
+    <label for="layout">Layout</label>
+    <select id="layout">
+      <option value="vertical">Vertical — one image below another</option>
+      <option value="horizontal">Horizontal — images side by side</option>
+      <option value="grid">Grid — two columns</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="background">Background colour</label>
+    <input id="background" type="color" value="#ffffff">
+  </div>
+
+  <div class="field">
+    <label for="output-format">Output format</label>
+    <select id="output-format">
+      <option value="image/png">PNG</option>
+      <option value="image/jpeg">JPEG</option>
+      <option value="image/webp">WebP</option>
+    </select>
+  </div>
+
+  <div id="preview-grid" class="preview-grid" aria-label="Selected image previews"></div>
+
+  <div class="button-row">
+    <button class="action-button" id="merge-button" type="button">Combine Images</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+    <button class="action-button" id="download-button" type="button" hidden>Download Combined Image</button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite">Select at least two images to begin.</p>
+  <canvas id="result-canvas"></canvas>
+  <p class="hint">Images are processed in your browser and are not uploaded to an EasyTools India server. Very large images may require substantial device memory.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const fileInput = document.getElementById("image-files");
+      const layoutInput = document.getElementById("layout");
+      const backgroundInput = document.getElementById("background");
+      const formatInput = document.getElementById("output-format");
+      const previewGrid = document.getElementById("preview-grid");
+      const mergeButton = document.getElementById("merge-button");
+      const resetButton = document.getElementById("reset-button");
+      const downloadButton = document.getElementById("download-button");
+      const status = document.getElementById("status");
+      const canvas = document.getElementById("result-canvas");
+      const ctx = canvas.getContext("2d");
+
+      let images = [];
+      let downloadUrl = null;
+
+      function clearOutput() {
+        if (downloadUrl) {
+          URL.revokeObjectURL(downloadUrl);
+          downloadUrl = null;
+        }
+        downloadButton.hidden = true;
+        canvas.hidden = true;
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+
+      function showStatus(message, error = false) {
+        status.textContent = message;
+        status.className = "status" + (error ? " error" : "");
+      }
+
+      function releaseImages() {
+        images.forEach(item => {
+          URL.revokeObjectURL(item.url);
+          if (item.image && typeof item.image.close === "function") item.image.close();
+        });
+        images = [];
+      }
+
+      async function loadImage(file) {
+        if (!file.type.startsWith("image/")) {
+          throw new Error(file.name + " is not a supported image file.");
+        }
+
+        const url = URL.createObjectURL(file);
+
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+
+          if (!image.naturalWidth || !image.naturalHeight) {
+            throw new Error("Could not read " + file.name + ".");
+          }
+
+          return { file, url, image, width: image.naturalWidth, height: image.naturalHeight };
+        } catch {
+          URL.revokeObjectURL(url);
+          throw new Error("Could not open " + file.name + ". Choose another image.");
+        }
+      }
+
+      function renderPreviews() {
+        previewGrid.replaceChildren();
+
+        images.forEach((item, index) => {
+          const card = document.createElement("div");
+          card.className = "preview-card";
+
+          const img = document.createElement("img");
+          img.src = item.url;
+          img.alt = "Preview of " + item.file.name;
+
+          const label = document.createElement("p");
+          label.textContent = (index + 1) + ". " + item.file.name +
+            " (" + item.width + " × " + item.height + ")";
+
+          card.append(img, label);
+          previewGrid.appendChild(card);
+        });
+      }
+
+      fileInput.addEventListener("change", async () => {
+        clearOutput();
+        releaseImages();
+        previewGrid.replaceChildren();
+
+        const files = Array.from(fileInput.files || []);
+
+        if (files.length < 2) {
+          showStatus("Please select at least two images.", true);
+          return;
+        }
+        if (files.length > 20) {
+          fileInput.value = "";
+          showStatus("Please select no more than 20 images.", true);
+          return;
+        }
+
+        mergeButton.disabled = true;
+        showStatus("Loading images…");
+
+        try {
+          const loaded = [];
+          for (const file of files) {
+            loaded.push(await loadImage(file));
+          }
+          images = loaded;
+          renderPreviews();
+          showStatus(images.length + " images ready to combine.");
+        } catch (error) {
+          loadedCleanup();
+          fileInput.value = "";
+          showStatus(error.message || "Unable to load images.", true);
+        } finally {
+          mergeButton.disabled = false;
+        }
+      });
+
+      function loadedCleanup() {
+        releaseImages();
+        previewGrid.replaceChildren();
+      }
+
+      mergeButton.addEventListener("click", async () => {
+        clearOutput();
+
+        if (images.length < 2) {
+          showStatus("Please select at least two valid images first.", true);
+          return;
+        }
+
+        mergeButton.disabled = true;
+        resetButton.disabled = true;
+        showStatus("Combining images…");
+
+        try {
+          const gap = 10;
+          const maxDimension = 12000;
+          const layout = layoutInput.value;
+          const count = images.length;
+          const widths = images.map(item => item.width);
+          const heights = images.map(item => item.height);
+
+          let width;
+          let height;
+          const positions = [];
+
+          if (layout === "horizontal") {
+            width = widths.reduce((sum, value) => sum + value, 0) + gap * (count - 1);
+            height = Math.max(...heights);
+            let x = 0;
+            images.forEach(item => {
+              positions.push({x, y: 0});
+              x += item.width + gap;
+            });
+          } else if (layout === "vertical") {
+            width = Math.max(...widths);
+            height = heights.reduce((sum, value) => sum + value, 0) + gap * (count - 1);
+            let y = 0;
+            images.forEach(item => {
+              positions.push({x: 0, y});
+              y += item.height + gap;
+            });
+          } else {
+            const columns = 2;
+            const rows = Math.ceil(count / columns);
+            const columnWidths = [0, 0];
+            const rowHeights = Array(rows).fill(0);
+
+            images.forEach((item, index) => {
+              const column = index % columns;
+              const row = Math.floor(index / columns);
+              columnWidths[column] = Math.max(columnWidths[column], item.width);
+              rowHeights[row] = Math.max(rowHeights[row], item.height);
+            });
+
+            width = columnWidths[0] + columnWidths[1] + gap;
+            height = rowHeights.reduce((sum, value) => sum + value, 0) + gap * (rows - 1);
+
+            images.forEach((item, index) => {
+              const column = index % columns;
+              const row = Math.floor(index / columns);
+              const x = column === 0 ? 0 : columnWidths[0] + gap;
+              const y = rowHeights.slice(0, row).reduce((sum, value) => sum + value, 0) + row * gap;
+              positions.push({x, y});
+            });
+          }
+
+          if (width > maxDimension || height > maxDimension ||
+              width * height > 40000000) {
+            throw new Error("Combined image would be too large. Choose smaller images or a different layout.");
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.fillStyle = backgroundInput.value;
+          ctx.fillRect(0, 0, width, height);
+
+          images.forEach((item, index) => {
+            const pos = positions[index];
+            ctx.drawImage(item.image, pos.x, pos.y);
+          });
+
+          const mime = formatInput.value;
+          const blob = await new Promise(resolve => canvas.toBlob(resolve, mime, 0.92));
+
+          if (!blob) {
+            throw new Error("Your browser could not create the output image. Try PNG format.");
+          }
+
+          downloadUrl = URL.createObjectURL(blob);
+          downloadButton.hidden = false;
+          canvas.hidden = false;
+          showStatus("Success! Combined " + count + " images into one file.");
+        } catch (error) {
+          clearOutput();
+          showStatus(error.message || "Could not combine these images.", true);
+        } finally {
+          mergeButton.disabled = false;
+          resetButton.disabled = false;
+        }
+      });
+
+      downloadButton.addEventListener("click", () => {
+        if (!downloadUrl) return;
+
+        const extension = formatInput.value === "image/jpeg" ? "jpg" :
+          formatInput.value === "image/webp" ? "webp" : "png";
+
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = "combined-images." + extension;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      });
+
+      resetButton.addEventListener("click", () => {
+        clearOutput();
+        releaseImages();
+        fileInput.value = "";
+        previewGrid.replaceChildren();
+        layoutInput.value = "vertical";
+        backgroundInput.value = "#ffffff";
+        formatInput.value = "image/png";
+        showStatus("Select at least two images to begin.");
+      });
+
+      window.addEventListener("beforeunload", () => {
+        clearOutput();
+        releaseImages();
+      });
+    })();
+  </script></body>
+</html>
