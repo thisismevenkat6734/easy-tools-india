@@ -37,12 +37,30 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Automatically update the footer year
-  const yearElements = document.querySelectorAll("#current-year");
-
-  yearElements.forEach((element) => {
+  document.querySelectorAll("#current-year").forEach((element) => {
     element.textContent = String(new Date().getFullYear());
   });
 
   // Add a class when JavaScript is available
   document.documentElement.classList.add("js-enabled");
+
+  // Register the Progressive Web App service worker
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("./service-worker.js")
+        .then((registration) => {
+          console.info(
+            "EasyTools India service worker registered:",
+            registration.scope
+          );
+        })
+        .catch((error) => {
+          console.error(
+            "EasyTools India service worker registration failed:",
+            error
+          );
+        });
+    });
+  }
 });
