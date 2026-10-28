@@ -1,0 +1,217 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Rotate PDF pages online for free. Rotate all pages or selected pages and download your updated PDF.">
+  <meta name="robots" content="index,follow">
+  <title>Rotate PDF Pages Online Free | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:760px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:18px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field input,.field select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit;background:#fff}
+    .action-button{display:inline-block;border:0;border-radius:9px;padding:12px 18px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .action-button:disabled{opacity:.55;cursor:not-allowed}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .status-message{margin-top:16px;padding:12px;border-radius:8px;background:#f1f5f9;overflow-wrap:anywhere}
+    .status-message.error{background:#fef2f2;color:#991b1b}
+    .status-message.success{background:#f0fdf4;color:#166534}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.5}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+  </style>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Rotate PDF Pages</h1>
+      <p>Rotate every page or a selected range of pages in your PDF, then download the updated file.</p>  <div class="field">
+    <label for="pdf-file">Choose a PDF file</label>
+    <input id="pdf-file" type="file" accept=".pdf,application/pdf">
+  </div>
+
+  <div class="field">
+    <label for="rotation">Rotation direction</label>
+    <select id="rotation">
+      <option value="90">Rotate 90° clockwise</option>
+      <option value="180">Rotate 180°</option>
+      <option value="270">Rotate 270° clockwise (90° counterclockwise)</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="page-mode">Pages to rotate</label>
+    <select id="page-mode">
+      <option value="all">All pages</option>
+      <option value="range">Selected page range</option>
+    </select>
+  </div>
+
+  <div class="field" id="range-fields" hidden>
+    <label for="start-page">First page number</label>
+    <input id="start-page" type="number" min="1" step="1" value="1">
+    <label for="end-page" style="margin-top:12px">Last page number</label>
+    <input id="end-page" type="number" min="1" step="1" value="1">
+    <p class="hint">Page numbers start at 1. For example, pages 2–4 rotates pages 2, 3 and 4.</p>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="rotate-button" type="button">Rotate PDF</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+  </div>
+
+  <div id="status" class="status-message" role="status" aria-live="polite">Choose a PDF file to begin.</div>
+  <div id="download-area" class="button-row"></div>
+
+  <p class="hint">Privacy: your selected PDF is processed in your browser by this page; it is not uploaded to an EasyTools India server. Use a trusted device for sensitive documents. The PDF processing library is loaded from a third-party CDN.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const fileInput = document.getElementById("pdf-file");
+      const rotationSelect = document.getElementById("rotation");
+      const pageMode = document.getElementById("page-mode");
+      const rangeFields = document.getElementById("range-fields");
+      const startPage = document.getElementById("start-page");
+      const endPage = document.getElementById("end-page");
+      const rotateButton = document.getElementById("rotate-button");
+      const resetButton = document.getElementById("reset-button");
+      const status = document.getElementById("status");
+      const downloadArea = document.getElementById("download-area");
+
+      let outputUrl = null;
+
+      function setStatus(message, type = "") {
+        status.textContent = message;
+        status.className = "status-message" + (type ? " " + type : "");
+      }
+
+      function clearDownload() {
+        if (outputUrl) {
+          URL.revokeObjectURL(outputUrl);
+          outputUrl = null;
+        }
+        downloadArea.replaceChildren();
+      }
+
+      function updatePageMode() {
+        rangeFields.hidden = pageMode.value !== "range";
+      }
+
+      pageMode.addEventListener("change", updatePageMode);
+
+      fileInput.addEventListener("change", () => {
+        clearDownload();
+        if (!fileInput.files.length) {
+          setStatus("Choose a PDF file to begin.");
+          return;
+        }
+        const file = fileInput.files[0];
+        if (!file.name.toLowerCase().endsWith(".pdf") &&
+            file.type !== "application/pdf") {
+          fileInput.value = "";
+          setStatus("Please select a valid PDF file.", "error");
+          return;
+        }
+        setStatus("Selected: " + file.name + " (" +
+          (file.size / 1024 / 1024).toFixed(2) + " MB).");
+      });
+
+      rotateButton.addEventListener("click", async () => {
+        clearDownload();
+
+        if (!window.PDFLib || !window.PDFLib.PDFDocument) {
+          setStatus("The PDF library could not load. Check your internet connection, refresh the page, and try again.", "error");
+          return;
+        }
+
+        const file = fileInput.files[0];
+        if (!file) {
+          setStatus("Please choose a PDF file first.", "error");
+          return;
+        }
+
+        rotateButton.disabled = true;
+        resetButton.disabled = true;
+        setStatus("Processing PDF… please wait.");
+
+        try {
+          const bytes = await file.arrayBuffer();
+          const pdfDoc = await PDFLib.PDFDocument.load(bytes);
+          const pages = pdfDoc.getPages();
+          const totalPages = pages.length;
+
+          if (totalPages === 0) {
+            throw new Error("This PDF contains no pages.");
+          }
+
+          let first = 1;
+          let last = totalPages;
+
+          if (pageMode.value === "range") {
+            first = Number(startPage.value);
+            last = Number(endPage.value);
+
+            if (!Number.isInteger(first) || !Number.isInteger(last) ||
+                first < 1 || last < first || last > totalPages) {
+              throw new Error("Enter a valid page range between 1 and " + totalPages + ".");
+            }
+          }
+
+          const degrees = Number(rotationSelect.value);
+
+          for (let i = first - 1; i < last; i++) {
+            const page = pages[i];
+            const current = page.getRotation().angle;
+            page.setRotation(PDFLib.degrees(((current + degrees) % 360 + 360) % 360));
+          }
+
+          const outputBytes = await pdfDoc.save();
+          const blob = new Blob([outputBytes], { type: "application/pdf" });
+          outputUrl = URL.createObjectURL(blob);
+
+          const link = document.createElement("a");
+          link.href = outputUrl;
+          link.download = "rotated-" + file.name.replace(/\.pdf$/i, "") + ".pdf";
+          link.className = "action-button";
+          link.textContent = "Download Rotated PDF";
+          downloadArea.appendChild(link);
+
+          setStatus("Success! Rotated " + (last - first + 1) +
+            " of " + totalPages + " page(s). Download your updated PDF.", "success");
+        } catch (error) {
+          console.error("PDF rotation failed:", error);
+          setStatus(error && error.message
+            ? "Could not rotate this PDF: " + error.message
+            : "Could not rotate this PDF. The file may be damaged or encrypted.", "error");
+        } finally {
+          rotateButton.disabled = false;
+          resetButton.disabled = false;
+        }
+      });
+
+      resetButton.addEventListener("click", () => {
+        clearDownload();
+        fileInput.value = "";
+        rotationSelect.value = "90";
+        pageMode.value = "all";
+        startPage.value = "1";
+        endPage.value = "1";
+        updatePageMode();
+        setStatus("Choose a PDF file to begin.");
+      });
+
+      window.addEventListener("beforeunload", clearDownload);
+    })();
+  </script></body>
+</html>
