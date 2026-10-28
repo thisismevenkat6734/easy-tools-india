@@ -1,0 +1,299 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Rotate and flip images online. Preview and download rotated images in JPEG, PNG or WebP format.">
+  <meta name="theme-color" content="#2563eb">
+  <title>Image Rotate & Flip | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .rotate-tool{width:min(94%,760px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .rotate-tool h1{margin-top:0}
+    .rotate-tool label{display:block;margin:14px 0 6px;font-weight:600}
+    .rotate-tool input[type=file],.rotate-tool select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .rotate-tool button,.rotate-tool .download{display:inline-block;margin:8px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .rotate-tool button:disabled{opacity:.5;cursor:not-allowed}
+    .preview{margin-top:20px;padding:14px;border:1px solid #dbe3ef;border-radius:10px}
+    .preview img{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px auto}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    .note{padding:12px;border-radius:8px;background:#eff6ff}
+    @media(max-width:480px){.rotate-tool{padding:15px}}
+  </style>
+</head>
+<body>
+  <main class="rotate-tool">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>Image Rotate & Flip</h1>
+    <p>Rotate your image by 90°, 180° or 270°, or flip it horizontally and vertically.</p>
+    <p class="note">Your image is processed in your browser and is not uploaded by this tool.</p>
+
+    <label for="image-file">Choose an image (JPEG, PNG or WebP)</label>
+    <input id="image-file" type="file" accept="image/jpeg,image/png,image/webp">
+
+    <div>
+      <button id="left-button" type="button" disabled>↶ Rotate left 90°</button>
+      <button id="right-button" type="button" disabled>↷ Rotate right 90°</button>
+      <button id="flip-h-button" type="button" disabled>Flip horizontal</button>
+      <button id="flip-v-button" type="button" disabled>Flip vertical</button>
+      <button id="reset-edit-button" type="button" disabled>Reset edits</button>
+    </div>
+
+    <label for="output-format">Output format</label>
+    <select id="output-format">
+      <option value="image/jpeg">JPEG</option>
+      <option value="image/png">PNG</option>
+      <option value="image/webp">WebP</option>
+    </select>
+
+    <button id="download-button" type="button" disabled>Apply & prepare download</button>
+    <button id="reset-button" type="button">Start over</button>
+
+    <p id="status" class="status" role="status" aria-live="polite">Choose an image to begin.</p>
+
+    <section id="preview" class="preview" hidden>
+      <h2>Preview</h2>
+      <img id="preview-image" alt="Rotated or flipped image preview">
+      <p id="image-info"></p>
+      <a id="download-link" class="download" hidden>Download image</a>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const fileInput = $("image-file");
+      const formatInput = $("output-format");
+      const leftButton = $("left-button");
+      const rightButton = $("right-button");
+      const flipHButton = $("flip-h-button");
+      const flipVButton = $("flip-v-button");
+      const resetEditButton = $("reset-edit-button");
+      const downloadButton = $("download-button");
+      const resetButton = $("reset-button");
+      const status = $("status");
+      const preview = $("preview");
+      const previewImage = $("preview-image");
+      const imageInfo = $("image-info");
+      const downloadLink = $("download-link");
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      const MAX_PIXELS = 40000000;
+      let file = null;
+      let image = null;
+      let sourceUrl = null;
+      let resultUrl = null;
+      let rotation = 0;
+      let flipH = false;
+      let flipV = false;
+      let generation = 0;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function bytes(n) {
+        return n < 1024 ? n + " B" :
+          n < 1048576 ? (n / 1024).toFixed(1) + " KB" :
+          (n / 1048576).toFixed(2) + " MB";
+      }
+
+      function clearResult() {
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+        resultUrl = null;
+        previewImage.removeAttribute("src");
+        imageInfo.textContent = "";
+        downloadLink.removeAttribute("href");
+        downloadLink.hidden = true;
+        preview.hidden = true;
+      }
+
+      function updateButtons() {
+        const ready = Boolean(image);
+        [leftButton, rightButton, flipHButton, flipVButton,
+          resetEditButton, downloadButton].forEach(button => {
+          button.disabled = !ready;
+        });
+      }
+
+      function resetEdits() {
+        rotation = 0;
+        flipH = false;
+        flipV = false;
+        clearResult();
+        say("Edits reset. Choose your rotation or flip options.");
+      }
+
+      function startOver() {
+        generation++;
+        file = null;
+        image = null;
+        rotation = 0;
+        flipH = false;
+        flipV = false;
+        fileInput.value = "";
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+        clearResult();
+        updateButtons();
+        say("Choose an image to begin.");
+      }
+
+      function loadCanvas() {
+        const quarterTurn = rotation % 180 !== 0;
+        const width = quarterTurn ? image.naturalHeight : image.naturalWidth;
+        const height = quarterTurn ? image.naturalWidth : image.naturalHeight;
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas is not supported by this browser.");
+
+        context.translate(width / 2, height / 2);
+        context.rotate(rotation * Math.PI / 180);
+        context.scale(flipH ? -1 : 1, flipV ? -1 : 1);
+        context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+        return canvas;
+      }
+
+      fileInput.addEventListener("change", () => {
+        const id = ++generation;
+        file = null;
+        image = null;
+        rotation = 0;
+        flipH = false;
+        flipV = false;
+        clearResult();
+        updateButtons();
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+
+        const selected = fileInput.files && fileInput.files[0];
+        if (!selected) {
+          say("Choose an image to begin.");
+          return;
+        }
+
+        if (!["image/jpeg", "image/png", "image/webp"].includes(selected.type)) {
+          fileInput.value = "";
+          say("Choose a JPEG, PNG or WebP image.", "error");
+          return;
+        }
+        if (!selected.size || selected.size > MAX_FILE_SIZE) {
+          fileInput.value = "";
+          say(selected.size ? "Maximum file size is 20 MB." : "The selected file is empty.", "error");
+          return;
+        }
+
+        say("Loading image…");
+        const url = URL.createObjectURL(selected);
+        const img = new Image();
+
+        img.onload = () => {
+          if (id !== generation) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          if (!img.naturalWidth || !img.naturalHeight ||
+              img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+            URL.revokeObjectURL(url);
+            say("This image is too large to process safely.", "error");
+            return;
+          }
+          file = selected;
+          image = img;
+          sourceUrl = url;
+          updateButtons();
+          say(`Image loaded: ${img.naturalWidth} × ${img.naturalHeight} pixels.`, "success");
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (id === generation) say("Unable to open this image. Try another file.", "error");
+        };
+        img.src = url;
+      });
+
+      function edit(action) {
+        if (!image) return;
+        action();
+        clearResult();
+        say("Edit applied. Prepare the download to save the result.", "success");
+      }
+
+      leftButton.addEventListener("click", () => edit(() => rotation = (rotation + 270) % 360));
+      rightButton.addEventListener("click", () => edit(() => rotation = (rotation + 90) % 360));
+      flipHButton.addEventListener("click", () => edit(() => flipH = !flipH));
+      flipVButton.addEventListener("click", () => edit(() => flipV = !flipV));
+      resetEditButton.addEventListener("click", resetEdits);
+      formatInput.addEventListener("change", clearResult);
+
+      downloadButton.addEventListener("click", async () => {
+        if (!file || !image) {
+          say("Choose an image first.", "error");
+          return;
+        }
+
+        const id = ++generation;
+        downloadButton.disabled = true;
+        clearResult();
+        say("Preparing image…");
+
+        try {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          if (id !== generation) return;
+
+          const canvas = loadCanvas();
+          if (canvas.width * canvas.height > MAX_PIXELS) {
+            throw new Error("Output dimensions exceed the processing limit.");
+          }
+
+          const type = formatInput.value;
+          const context = canvas.getContext("2d");
+          if (type === "image/jpeg") {
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.putImageData(pixels, 0, 0);
+          }
+
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob(value => value ? resolve(value) : reject(new Error("Image export failed.")), type, 0.95);
+          });
+
+          if (id !== generation) return;
+          if (blob.type !== type) throw new Error("This format is not supported by your browser.");
+
+          resultUrl = URL.createObjectURL(blob);
+          previewImage.src = resultUrl;
+          imageInfo.textContent = `${canvas.width} × ${canvas.height} pixels · ${bytes(blob.size)} · ${type.replace("image/", "").toUpperCase()}`;
+
+          const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+          const ext = type === "image/jpeg" ? "jpg" : type === "image/webp" ? "webp" : "png";
+          downloadLink.href = resultUrl;
+          downloadLink.download = `${baseName}-edited.${ext}`;
+          downloadLink.hidden = false;
+          preview.hidden = false;
+          say("Image ready. Preview and download your edited image.", "success");
+        } catch (error) {
+          if (id === generation) say(error.message || "Could not process this image.", "error");
+        } finally {
+          if (id === generation) downloadButton.disabled = !image;
+        }
+      });
+
+      resetButton.addEventListener("click", startOver);
+      window.addEventListener("pagehide", () => {
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+      });
+    })();
+  </script>
+</body>
+</html>
