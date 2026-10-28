@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Convert multiple images into one PDF document in your browser. Choose page size, orientation and margins, then download your PDF.">
+  <meta name="theme-color" content="#2563eb">
+  <title>Image to PDF | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .pdf-tool{width:min(94%,800px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .pdf-tool h1{margin-top:0}.pdf-tool label{display:block;margin:14px 0 6px;font-weight:600}
+    .pdf-tool input[type=file],.pdf-tool select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .pdf-tool button{margin:8px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+    .pdf-tool button:disabled{opacity:.5;cursor:not-allowed}
+    .options{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+    .image-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-top:16px}
+    .image-card{padding:10px;border:1px solid #dbe3ef;border-radius:10px;overflow-wrap:anywhere}
+    .image-card img{width:100%;height:130px;object-fit:contain;background:#f1f5f9}
+    .image-card button{padding:6px 9px;font-size:.9rem}
+    .note{padding:12px;background:#eff6ff;border-radius:8px}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    @media(max-width:480px){.pdf-tool{padding:15px}}
+  </style>
+</head>
+<body>
+  <main class="pdf-tool">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>Image to PDF</h1>
+    <p>Combine one or more images into a single downloadable PDF.</p>
+    <p class="note">Images are processed in your browser. They are not uploaded by this tool. Files are added to the PDF in the order shown below.</p>
+
+    <label for="image-files">Choose images (JPEG, PNG or WebP)</label>
+    <input id="image-files" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+
+    <div class="options">
+      <div>
+        <label for="page-size">PDF page size</label>
+        <select id="page-size">
+          <option value="a4">A4</option>
+          <option value="letter">Letter</option>
+          <option value="fit">Fit image to page</option>
+        </select>
+      </div>
+      <div>
+        <label for="orientation">Orientation</label>
+        <select id="orientation">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </div>
+      <div>
+        <label for="margin">Margin (mm)</label>
+        <select id="margin">
+          <option value="0">0 mm</option>
+          <option value="5" selected>5 mm</option>
+          <option value="10">10 mm</option>
+          <option value="15">15 mm</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="image-list" class="image-list"></div>
+    <p id="status" class="status" role="status" aria-live="polite">Choose one or more images.</p>
+    <button id="create-pdf" type="button" disabled>Create PDF</button>
+    <button id="clear" type="button">Clear images</button>
+    <a id="download" hidden></a>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" referrerpolicy="no-referrer"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const fileInput = $("image-files");
+      const list = $("image-list");
+      const status = $("status");
+      const createButton = $("create-pdf");
+      const clearButton = $("clear");
+      const download = $("download");
+      const pageSize = $("page-size");
+      const orientation = $("orientation");
+      const marginInput = $("margin");
+
+      const MAX_FILES = 30;
+      const MAX_FILE_SIZE = 15 * 1024 * 1024;
+      const MAX_TOTAL_SIZE = 50 * 1024 * 1024;
+      const MAX_PIXELS = 30000000;
+
+      let images = [];
+      let busy = false;
+      let generation = 0;
+      let pdfUrl = null;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function releasePdf() {
+        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+        pdfUrl = null;
+        download.removeAttribute("href");
+        download.removeAttribute("download");
+        download.hidden = true;
+        download.textContent = "";
+      }
+
+      function updateButtons() {
+        createButton.disabled = busy || images.length === 0;
+        clearButton.disabled = busy;
+      }
+
+      function releaseImages() {
+        images.forEach(item => {
+          if (item.url) URL.revokeObjectURL(item.url);
+        });
+        images = [];
+      }
+
+      function clearAll() {
+        if (busy) return;
+        generation++;
+        releaseImages();
+        releasePdf();
+        fileInput.value = "";
+        list.replaceChildren();
+        updateButtons();
+        say("Choose one or more images.");
+      }
+
+      function renderList() {
+        list.replaceChildren();
+
+        images.forEach((item, index) => {
+          const card = document.createElement("div");
+          card.className = "image-card";
+
+          const image = document.createElement("img");
+          image.src = item.url;
+          image.alt = item.file.name;
+
+          const name = document.createElement("p");
+          name.textContent = `${index + 1}. ${item.file.name}`;
+
+          const size = document.createElement("p");
+          size.textContent = `${(item.file.size / 1024).toFixed(1)} KB`;
+
+          const controls = document.createElement("div");
+
+          const up = document.createElement("button");
+          up.type = "button";
+          up.textContent = "Move up";
+          up.disabled = busy || index === 0;
+          up.addEventListener("click", () => moveItem(index, -1));
+
+          const down = document.createElement("button");
+          down.type = "button";
+          down.textContent = "Move down";
+          down.disabled = busy || index === images.length - 1;
+          down.addEventListener("click", () => moveItem(index, 1));
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "Remove";
+          remove.disabled = busy;
+          remove.addEventListener("click", () => removeItem(index));
+
+          controls.append(up, down, remove);
+          card.append(image, name, size, controls);
+          list.append(card);
+        });
+
+        updateButtons();
+      }
+
+      function moveItem(index, direction) {
+        if (busy) return;
+        const target = index + direction;
+        if (target < 0 || target >= images.length) return;
+        [images[index], images[target]] = [images[target], images[index]];
+        releasePdf();
+        renderList();
+        say("Image order updated.");
+      }
+
+      function removeItem(index) {
+        if (busy) return;
+        URL.revokeObjectURL(images[index].url);
+        images.splice(index, 1);
+        releasePdf();
+        renderList();
+        say(`${images.length} image(s) selected.`);
+      }
+
+      function loadImage(file) {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(file);
+          const image = new Image();
+          image.onload = () => {
+            if (!image.naturalWidth || !image.naturalHeight ||
+                image.naturalWidth * image.naturalHeight > MAX_PIXELS) {
+              URL.revokeObjectURL(url);
+              reject(new Error(`${file.name}: image dimensions are too large.`));
+              return;
+            }
+            resolve({file, url, image});
+          };
+          image.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error(`${file.name}: could not read this image.`));
+          };
+          image.src = url;
+        });
+      }
+
+      fileInput.addEventListener("change", async () => {
+        if (busy) return;
+        const id = ++generation;
+        releasePdf();
+
+        const selected = Array.from(fileInput.files || []);
+        fileInput.value = "";
+
+        if (!selected.length) return;
+
+        if (selected.length + images.length > MAX_FILES) {
+          say(`Choose no more than ${MAX_FILES} images in total.`, "error");
+          return;
+        }
+
+        const allowed = ["image/jpeg", "image/png", "image/webp"];
+        const bad = selected.find(file => !allowed.includes(file.type));
+        if (bad) {
+          say(`${bad.name}: use JPEG, PNG or WebP images only.`, "error");
+          return;
+        }
+
+        if (selected.some(file => !file.size || file.size > MAX_FILE_SIZE)) {
+          say("Each image must be smaller than 15 MB and cannot be empty.", "error");
+          return;
+        }
+
+        const total = [...images.map(item => item.file.size), ...selected.map(file => file.size)]
+          .reduce((sum, size) => sum + size, 0);
+
+        if (total > MAX_TOTAL_SIZE) {
+          say("The combined image size must not exceed 50 MB.", "error");
+          return;
+        }
+
+        say("Loading images…");
+        try {
+          const loaded = [];
+          for (const file of selected) {
+            const item = await loadImage(file);
+            if (id !== generation) {
+              URL.revokeObjectURL(item.url);
+              loaded.forEach(entry => URL.revokeObjectURL(entry.url));
+              return;
+            }
+            loaded.push(item);
+          }
+
+          images.push(...loaded);
+          renderList();
+          say(`${images.length} image(s) ready. Reorder them if needed, then create your PDF.`, "success");
+        } catch (error) {
+          if (id === generation) say(error.message || "Unable to load images.", "error");
+        }
+      });
+
+      async function createPdf() {
+        if (busy || !images.length) return;
+
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+          say("The PDF library could not load. Check your internet connection and try again.", "error");
+          return;
+        }
+
+        busy = true;
+        const id = ++generation;
+        releasePdf();
+        renderList();
+        say("Creating PDF…");
+
+        try {
+          const {jsPDF} = window.jspdf;
+          const doc = new jsPDF({
+            orientation: orientation.value,
+            unit: "mm",
+            format: pageSize.value === "fit" ? "a4" : pageSize.value,
+            compress: true
+          });
+
+          const margin = Number(marginInput.value);
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const pageHeight = doc.internal.pageSize.getHeight();
+
+          for (let index = 0; index < images.length; index++) {
+            if (id !== generation) return;
+
+            const item = images[index];
+            const canvas = document.createElement("canvas");
+            canvas.width = item.image.naturalWidth;
+            canvas.height = item.image.naturalHeight;
+
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("Canvas is not supported by this browser.");
+
+            if (item.file.type === "image/jpeg") {
+              context.fillStyle = "#ffffff";
+              context.fillRect(0, 0, canvas.width, canvas.height);
+            }
+            context.drawImage(item.image, 0, 0);
+
+            const format = item.file.type === "image/png" ? "PNG" : "JPEG";
+            const data = canvas.toDataURL(format === "PNG" ? "image/png" : "image/jpeg", 0.95);
+
+            if (index > 0) {
+              if (pageSize.value === "fit") {
+                const widthMm = item.image.naturalWidth * 0.264583;
+                const heightMm = item.image.naturalHeight * 0.264583;
+                doc.addPage([Math.max(10, widthMm), Math.max(10, heightMm)], "portrait");
+              } else {
+                doc.addPage(pageSize.value, orientation.value);
+              }
+            }
+
+            let x = margin;
+            let y = margin;
+            let maxWidth = pageWidth - margin * 2;
+            let maxHeight = pageHeight - margin * 2;
+
+            if (pageSize.value === "fit") {
+              maxWidth = pageWidth - margin * 2;
+              maxHeight = pageHeight - margin * 2;
+            }
+
+            const scale = Math.min(maxWidth / item.image.naturalWidth, maxHeight / item.image.naturalHeight);
+            const width = item.image.naturalWidth * scale;
+            const height = item.image.naturalHeight * scale;
+            x += (maxWidth - width) / 2;
+            y += (maxHeight - height) / 2;
+
+            doc.addImage(data, format, x, y, width, height);
+          }
+
+          if (id !== generation) return;
+          const blob = doc.output("blob");
+          pdfUrl = URL.createObjectURL(blob);
+          download.href = pdfUrl;
+          download.download = "easytools-images.pdf";
+          download.textContent = `Download PDF (${(blob.size / 1024).toFixed(1)} KB)`;
+          download.hidden = false;
+          say(`PDF created successfully with ${images.length} page(s).`, "success");
+        } catch (error) {
+          if (id === generation) say(error.message || "PDF creation failed.", "error");
+        } finally {
+          if (id === generation) {
+            busy = false;
+            renderList();
+          }
+        }
+      }
+
+      createButton.addEventListener("click", createPdf);
+      clearButton.addEventListener("click", clearAll);
+      pageSize.addEventListener("change", releasePdf);
+      orientation.addEventListener("change", releasePdf);
+      marginInput.addEventListener("change", releasePdf);
+      window.addEventListener("pagehide", () => {
+        if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+        images.forEach(item => URL.revokeObjectURL(item.url));
+      });
+
+      updateButtons();
+    })();
+  </script>
+</body>
+</html>
