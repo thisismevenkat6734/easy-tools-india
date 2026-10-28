@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://thisismevenkat6734.github.io/easy-tools-india/sitemap.xml
