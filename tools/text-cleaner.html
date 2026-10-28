@@ -1,0 +1,195 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Clean text online by removing extra spaces, blank lines, duplicate lines and unwanted characters with this free text cleaner.">
+  <meta name="robots" content="index,follow">
+  <title>Free Text Cleaner Online | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:850px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:20px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field textarea{box-sizing:border-box;width:100%;min-height:200px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font:inherit;line-height:1.6;resize:vertical}
+    .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}
+    .option{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid #e2e8f0;border-radius:9px;line-height:1.4}
+    .option input{margin-top:4px}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+    .action-button{border:0;border-radius:9px;padding:12px 17px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .status{margin-top:14px;color:#475569;font-size:.92rem;line-height:1.5}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    @media(max-width:520px){.tool-workspace{padding:16px}.options{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Text Cleaner</h1>
+      <p>Clean up copied text, remove extra spaces, tidy blank lines, and remove duplicate lines.</p>  <div class="field">
+    <label for="input-text">Input text</label>
+    <textarea id="input-text" placeholder="Paste the text you want to clean here..."></textarea>
+  </div>
+
+  <h2>Cleaning options</h2>
+  <div class="options">
+    <label class="option"><input type="checkbox" id="trim-lines" checked> <span>Remove spaces at the beginning and end of each line</span></label>
+    <label class="option"><input type="checkbox" id="collapse-spaces" checked> <span>Replace repeated spaces or tabs with one space</span></label>
+    <label class="option"><input type="checkbox" id="remove-empty"> <span>Remove all empty lines</span></label>
+    <label class="option"><input type="checkbox" id="collapse-empty" checked> <span>Reduce repeated empty lines to one</span></label>
+    <label class="option"><input type="checkbox" id="remove-duplicates"> <span>Remove duplicate lines (keep first occurrence)</span></label>
+    <label class="option"><input type="checkbox" id="remove-symbols"> <span>Remove common special symbols and emoji</span></label>
+    <label class="option"><input type="checkbox" id="normalize-lines"> <span>Normalize line endings</span></label>
+    <label class="option"><input type="checkbox" id="remove-trailing"> <span>Remove blank lines at the start and end</span></label>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="clean-button" type="button">Clean Text</button>
+    <button class="action-button secondary-button" id="copy-button" type="button">Copy Output</button>
+    <button class="action-button secondary-button" id="swap-button" type="button">Use Output as Input</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+  </div>
+
+  <div class="field">
+    <label for="output-text">Cleaned text</label>
+    <textarea id="output-text" placeholder="Your cleaned text will appear here..." aria-live="polite"></textarea>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <p class="hint">Privacy: all cleaning happens in your browser. The text is not uploaded to an EasyTools India server. Removing symbols can change the meaning of text, so review the result before using it.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const input = document.getElementById("input-text");
+      const output = document.getElementById("output-text");
+      const status = document.getElementById("status");
+
+      function cleanText(text) {
+        const options = {
+          trimLines: document.getElementById("trim-lines").checked,
+          collapseSpaces: document.getElementById("collapse-spaces").checked,
+          removeEmpty: document.getElementById("remove-empty").checked,
+          collapseEmpty: document.getElementById("collapse-empty").checked,
+          removeDuplicates: document.getElementById("remove-duplicates").checked,
+          removeSymbols: document.getElementById("remove-symbols").checked,
+          normalizeLines: document.getElementById("normalize-lines").checked,
+          removeTrailing: document.getElementById("remove-trailing").checked
+        };
+
+        let result = text;
+
+        // Convert Windows and old Mac line endings to Unix-style newlines.
+        if (options.normalizeLines) {
+          result = result.replace(/\r\n?/g, "\n");
+        }
+
+        // Split on all common line endings, even when normalization is disabled.
+        let lines = result.split(/\r\n|\r|\n/);
+
+        if (options.trimLines) {
+          lines = lines.map(line => line.trim());
+        }
+
+        if (options.collapseSpaces) {
+          lines = lines.map(line => line.replace(/[ \t]{2,}/g, " "));
+        }
+
+        if (options.removeSymbols) {
+          // Keep letters, marks, numbers, whitespace and common punctuation.
+          lines = lines.map(line =>
+            line.replace(/[^\p{L}\p{M}\p{N}\s.,!?;:'"()\-_/&@#$%+*=]/gu, "")
+          );
+        }
+
+        if (options.removeEmpty) {
+          lines = lines.filter(line => line.trim() !== "");
+        } else if (options.collapseEmpty) {
+          const compacted = [];
+          let previousWasEmpty = false;
+
+          for (const line of lines) {
+            const isEmpty = line.trim() === "";
+            if (!(isEmpty && previousWasEmpty)) compacted.push(line);
+            previousWasEmpty = isEmpty;
+          }
+
+          lines = compacted;
+        }
+
+        if (options.removeDuplicates) {
+          const seen = new Set();
+          lines = lines.filter(line => {
+            if (seen.has(line)) return false;
+            seen.add(line);
+            return true;
+          });
+        }
+
+        result = lines.join("\n");
+
+        if (options.removeTrailing) {
+          result = result.replace(/^\s*\n+|\n+\s*$/g, "");
+        }
+
+        return result;
+      }
+
+      document.getElementById("clean-button").addEventListener("click", () => {
+        if (!input.value) {
+          status.textContent = "Please enter some text first.";
+          output.value = "";
+          return;
+        }
+
+        output.value = cleanText(input.value);
+        status.textContent = "Text cleaned successfully. Review the output before copying.";
+      });
+
+      document.getElementById("copy-button").addEventListener("click", async () => {
+        status.textContent = "";
+
+        if (!output.value) {
+          status.textContent = "There is no output text to copy.";
+          return;
+        }
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(output.value);
+          } else {
+            output.focus();
+            output.select();
+            const copied = document.execCommand("copy");
+            output.setSelectionRange(output.value.length, output.value.length);
+            if (!copied) throw new Error("Copy failed");
+          }
+          status.textContent = "Cleaned text copied.";
+        } catch {
+          status.textContent = "Copy was blocked. Select the output text and copy it manually.";
+        }
+      });
+
+      document.getElementById("swap-button").addEventListener("click", () => {
+        input.value = output.value;
+        status.textContent = "Output moved to the input box.";
+        input.focus();
+      });
+
+      document.getElementById("reset-button").addEventListener("click", () => {
+        input.value = "";
+        output.value = "";
+        status.textContent = "";
+      });
+    })();
+  </script></body>
+</html>
