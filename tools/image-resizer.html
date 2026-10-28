@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Resize images online for free. Set custom dimensions, preserve aspect ratio, preview and download resized images in your browser.">
+  <meta name="theme-color" content="#2563eb">
+  <title>Image Resizer | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-page{width:min(94%,760px);margin:28px auto;padding:24px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .tool-page h1{margin-top:0}.tool-page label{display:block;margin:14px 0 6px;font-weight:600}
+    .tool-page input[type=file],.tool-page input[type=number],.tool-page select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .tool-page input[type=checkbox]{width:18px;height:18px;vertical-align:middle}
+    .dimensions{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .tool-page button,.tool-page .download{display:inline-block;margin:14px 8px 0 0;padding:11px 16px;background:#2563eb;color:#fff;border:0;border-radius:8px;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .tool-page button:disabled{opacity:.5;cursor:not-allowed}
+    .preview{margin-top:20px;padding:14px;border:1px solid #dbe3ef;border-radius:12px}
+    .preview img{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px auto}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    .note{padding:12px;background:#eff6ff;border-radius:8px}
+    @media(max-width:480px){.tool-page{padding:16px}.dimensions{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="tool-page">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>Image Resizer</h1>
+    <p>Resize an image to your preferred dimensions directly in your browser.</p>
+    <p class="note">Your image is processed locally and is not uploaded by this tool. Resizing to smaller dimensions may reduce image quality.</p>
+
+    <label for="image-file">Choose an image (JPEG, PNG or WebP)</label>
+    <input id="image-file" type="file" accept="image/jpeg,image/png,image/webp">
+
+    <div class="dimensions">
+      <div>
+        <label for="width">Width (pixels)</label>
+        <input id="width" type="number" min="1" max="12000" step="1" inputmode="numeric" placeholder="Width">
+      </div>
+      <div>
+        <label for="height">Height (pixels)</label>
+        <input id="height" type="number" min="1" max="12000" step="1" inputmode="numeric" placeholder="Height">
+      </div>
+    </div>
+
+    <label>
+      <input id="keep-ratio" type="checkbox" checked>
+      Keep aspect ratio
+    </label>
+
+    <label for="output-format">Output format</label>
+    <select id="output-format">
+      <option value="image/jpeg">JPEG</option>
+      <option value="image/png">PNG</option>
+      <option value="image/webp">WebP</option>
+    </select>
+
+    <button id="resize-button" type="button" disabled>Resize image</button>
+    <button id="reset-button" type="button">Reset</button>
+    <p id="status" class="status" role="status" aria-live="polite">Choose an image to begin.</p>
+
+    <section id="preview" class="preview" hidden>
+      <h2>Resized preview</h2>
+      <img id="preview-image" alt="Resized image preview">
+      <p id="image-info"></p>
+      <a id="download" class="download" hidden>Download resized image</a>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+      const fileInput = $("image-file");
+      const widthInput = $("width");
+      const heightInput = $("height");
+      const keepRatio = $("keep-ratio");
+      const formatInput = $("output-format");
+      const resizeButton = $("resize-button");
+      const resetButton = $("reset-button");
+      const status = $("status");
+      const preview = $("preview");
+      const previewImage = $("preview-image");
+      const imageInfo = $("image-info");
+      const download = $("download");
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      const MAX_DIMENSION = 12000;
+      const MAX_PIXELS = 40000000;
+      let sourceFile = null;
+      let sourceUrl = null;
+      let resultUrl = null;
+      let sourceImage = null;
+      let generation = 0;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function bytes(size) {
+        return size < 1024 ? size + " B" :
+          size < 1048576 ? (size / 1024).toFixed(1) + " KB" :
+          (size / 1048576).toFixed(2) + " MB";
+      }
+
+      function clearResult() {
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+        resultUrl = null;
+        previewImage.removeAttribute("src");
+        imageInfo.textContent = "";
+        download.removeAttribute("href");
+        download.hidden = true;
+      }
+
+      function reset() {
+        generation++;
+        sourceFile = null;
+        sourceImage = null;
+        fileInput.value = "";
+        widthInput.value = "";
+        heightInput.value = "";
+        resizeButton.disabled = true;
+        preview.hidden = true;
+        clearResult();
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+        say("Choose an image to begin.");
+      }
+
+      function updateDimension(changed) {
+        if (!sourceImage || !keepRatio.checked) return;
+        const ratio = sourceImage.naturalWidth / sourceImage.naturalHeight;
+        if (changed === "width" && widthInput.value) {
+          heightInput.value = Math.max(1, Math.round(Number(widthInput.value) / ratio));
+        } else if (changed === "height" && heightInput.value) {
+          widthInput.value = Math.max(1, Math.round(Number(heightInput.value) * ratio));
+        }
+      }
+
+      widthInput.addEventListener("input", () => updateDimension("width"));
+      heightInput.addEventListener("input", () => updateDimension("height"));
+
+      fileInput.addEventListener("change", async () => {
+        const id = ++generation;
+        sourceFile = null;
+        sourceImage = null;
+        resizeButton.disabled = true;
+        preview.hidden = true;
+        clearResult();
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          say("Choose an image to begin.");
+          return;
+        }
+        if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+          fileInput.value = "";
+          say("Please choose a JPEG, PNG or WebP image.", "error");
+          return;
+        }
+        if (file.size === 0 || file.size > MAX_FILE_SIZE) {
+          fileInput.value = "";
+          say(file.size === 0 ? "The selected file is empty." : "Maximum file size is 20 MB.", "error");
+          return;
+        }
+
+        say("Loading image…");
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+          if (id !== generation) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          if (!img.naturalWidth || !img.naturalHeight ||
+              img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+            URL.revokeObjectURL(url);
+            say("This image is too large to process safely in this browser.", "error");
+            return;
+          }
+
+          sourceFile = file;
+          sourceUrl = url;
+          sourceImage = img;
+          widthInput.value = img.naturalWidth;
+          heightInput.value = img.naturalHeight;
+          resizeButton.disabled = false;
+          say(`Image loaded: ${img.naturalWidth} × ${img.naturalHeight} pixels.`, "success");
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (id === generation) say("Unable to open this image. Please try another file.", "error");
+        };
+        img.src = url;
+      });
+
+      resizeButton.addEventListener("click", async () => {
+        if (!sourceFile || !sourceImage) {
+          say("Choose an image first.", "error");
+          return;
+        }
+
+        const id = ++generation;
+        const width = Number(widthInput.value);
+        const height = Number(heightInput.value);
+
+        if (!Number.isInteger(width) || !Number.isInteger(height) ||
+            width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          say("Enter whole-number dimensions between 1 and 12,000 pixels.", "error");
+          return;
+        }
+        if (width * height > MAX_PIXELS) {
+          say("The output would be too large. Choose dimensions totalling no more than 40 million pixels.", "error");
+          return;
+        }
+
+        resizeButton.disabled = true;
+        clearResult();
+        say("Resizing image…");
+
+        try {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          if (id !== generation) return;
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Canvas is not supported by this browser.");
+
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = "high";
+          context.fillStyle = "#ffffff";
+          if (formatInput.value === "image/jpeg") {
+            context.fillRect(0, 0, width, height);
+          }
+          context.drawImage(sourceImage, 0, 0, width, height);
+
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob(
+              value => value ? resolve(value) : reject(new Error("Image export failed.")),
+              formatInput.value,
+              0.92
+            );
+          });
+
+          if (id !== generation) return;
+          if (blob.type !== formatInput.value) {
+            throw new Error("This format is not supported by your browser. Choose JPEG or PNG.");
+          }
+
+          resultUrl = URL.createObjectURL(blob);
+          previewImage.src = resultUrl;
+          preview.hidden = false;
+          imageInfo.textContent =
+            `${width} × ${height} pixels · ${bytes(blob.size)} · ${blob.type.replace("image/", "").toUpperCase()}`;
+
+          const baseName = sourceFile.name.replace(/\.[^.]+$/, "") || "image";
+          const ext = blob.type === "image/jpeg" ? "jpg" :
+            blob.type === "image/webp" ? "webp" : "png";
+
+          download.href = resultUrl;
+          download.download = `${baseName}-resized.${ext}`;
+          download.hidden = false;
+          say("Image resized successfully. You can now download it.", "success");
+        } catch (error) {
+          if (id === generation) say(error.message || "Resizing failed. Please try again.", "error");
+        } finally {
+          if (id === generation) resizeButton.disabled = !sourceImage;
+        }
+      });
+
+      formatInput.addEventListener("change", clearResult);
+      resetButton.addEventListener("click", reset);
+      window.addEventListener("pagehide", () => {
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+      });
+    })();
+  </script>
+</body>
+</html>
