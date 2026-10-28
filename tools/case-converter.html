@@ -1,0 +1,215 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Convert text to uppercase, lowercase, title case, sentence case and more with this free online text case converter.">
+  <meta name="robots" content="index,follow">
+  <title>Free Text Case Converter | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:850px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:20px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field textarea{box-sizing:border-box;width:100%;min-height:220px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;font:inherit;line-height:1.6;resize:vertical}
+    .button-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:18px 0}
+    .action-button{border:0;border-radius:9px;padding:12px 14px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .status{margin-top:14px;color:#475569;font-size:.92rem;line-height:1.5}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    @media(max-width:480px){.tool-workspace{padding:16px}.button-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Text Case Converter</h1>
+      <p>Change your text to uppercase, lowercase, title case, sentence case and other useful formats.</p>  <div class="field">
+    <label for="input-text">Enter your text</label>
+    <textarea id="input-text" placeholder="Type or paste your text here..."></textarea>
+  </div>
+
+  <div class="button-grid" aria-label="Text conversion options">
+    <button class="action-button" data-conversion="upper" type="button">UPPERCASE</button>
+    <button class="action-button" data-conversion="lower" type="button">lowercase</button>
+    <button class="action-button" data-conversion="title" type="button">Title Case</button>
+    <button class="action-button" data-conversion="sentence" type="button">Sentence case</button>
+    <button class="action-button" data-conversion="alternating" type="button">aLtErNaTiNg CaSe</button>
+    <button class="action-button" data-conversion="inverse" type="button">iNVERSE cASE</button>
+    <button class="action-button secondary-button" data-conversion="trim" type="button">Remove Extra Spaces</button>
+    <button class="action-button secondary-button" data-conversion="capitalize" type="button">Capitalize Each Word</button>
+  </div>
+
+  <div class="field">
+    <label for="output-text">Converted text</label>
+    <textarea id="output-text" placeholder="Your converted text will appear here..." aria-live="polite"></textarea>
+  </div>
+
+  <div class="button-grid">
+    <button class="action-button" id="copy-button" type="button">Copy Output</button>
+    <button class="action-button secondary-button" id="use-output-button" type="button">Use Output as Input</button>
+    <button class="action-button secondary-button" id="clear-button" type="button">Clear All</button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <p class="hint">Your text is processed locally in your browser. It is not uploaded to an EasyTools India server.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const input = document.getElementById("input-text");
+      const output = document.getElementById("output-text");
+      const status = document.getElementById("status");
+
+      function titleCase(text) {
+        return text.toLocaleLowerCase().replace(
+          /(^|[\s\-–—/([{“‘])([\p{L}\p{N}])/gu,
+          (match, separator, character) => separator + character.toLocaleUpperCase()
+        );
+      }
+
+      function sentenceCase(text) {
+        let atSentenceStart = true;
+
+        return text.toLocaleLowerCase().replace(
+          /[\s\S]/gu,
+          character => {
+            if (atSentenceStart && /[\p{L}\p{N}]/u.test(character)) {
+              atSentenceStart = false;
+              return character.toLocaleUpperCase();
+            }
+
+            if (/[.!?。！？]/u.test(character)) {
+              atSentenceStart = true;
+            }
+
+            return character;
+          }
+        );
+      }
+
+      function alternatingCase(text) {
+        let upper = true;
+
+        return Array.from(text).map(character => {
+          if (!/\p{L}/u.test(character)) return character;
+
+          const converted = upper
+            ? character.toLocaleLowerCase()
+            : character.toLocaleUpperCase();
+
+          upper = !upper;
+          return converted;
+        }).join("");
+      }
+
+      function inverseCase(text) {
+        return Array.from(text).map(character => {
+          if (character === character.toLocaleLowerCase() &&
+              character !== character.toLocaleUpperCase()) {
+            return character.toLocaleUpperCase();
+          }
+          if (character === character.toLocaleUpperCase() &&
+              character !== character.toLocaleLowerCase()) {
+            return character.toLocaleLowerCase();
+          }
+          return character;
+        }).join("");
+      }
+
+      function convert(type) {
+        const text = input.value;
+        if (!text) {
+          status.textContent = "Please enter some text first.";
+          output.value = "";
+          return;
+        }
+
+        let converted;
+
+        switch (type) {
+          case "upper":
+            converted = text.toLocaleUpperCase();
+            break;
+          case "lower":
+            converted = text.toLocaleLowerCase();
+            break;
+          case "title":
+          case "capitalize":
+            converted = titleCase(text);
+            break;
+          case "sentence":
+            converted = sentenceCase(text);
+            break;
+          case "alternating":
+            converted = alternatingCase(text);
+            break;
+          case "inverse":
+            converted = inverseCase(text);
+            break;
+          case "trim":
+            converted = text
+              .split("\n")
+              .map(line => line.trim().replace(/\s+/gu, " "))
+              .join("\n")
+              .replace(/\n{3,}/gu, "\n\n");
+            break;
+          default:
+            status.textContent = "Unknown conversion option.";
+            return;
+        }
+
+        output.value = converted;
+        status.textContent = "Text converted successfully.";
+      }
+
+      document.querySelectorAll("[data-conversion]").forEach(button => {
+        button.addEventListener("click", () => convert(button.dataset.conversion));
+      });
+
+      document.getElementById("copy-button").addEventListener("click", async () => {
+        status.textContent = "";
+        if (!output.value) {
+          status.textContent = "There is no converted text to copy.";
+          return;
+        }
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(output.value);
+          } else {
+            output.focus();
+            output.select();
+            const copied = document.execCommand("copy");
+            output.setSelectionRange(output.value.length, output.value.length);
+            if (!copied) throw new Error("Copy failed");
+          }
+          status.textContent = "Converted text copied.";
+        } catch {
+          status.textContent = "Copy was blocked. Select the output text and copy it manually.";
+        }
+      });
+
+      document.getElementById("use-output-button").addEventListener("click", () => {
+        input.value = output.value;
+        status.textContent = "Output moved to the input box.";
+        input.focus();
+      });
+
+      document.getElementById("clear-button").addEventListener("click", () => {
+        input.value = "";
+        output.value = "";
+        status.textContent = "Both text boxes cleared.";
+        input.focus();
+      });
+    })();
+  </script></body>
+</html>
