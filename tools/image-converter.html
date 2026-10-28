@@ -1,0 +1,255 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Convert images between JPEG, PNG and WebP formats in your browser. Preview and download converted images privately.">
+  <meta name="theme-color" content="#2563eb">
+  <title>Image Converter | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .converter{width:min(94%,760px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .converter h1{margin-top:0}
+    .converter label{display:block;margin:14px 0 6px;font-weight:600}
+    .converter input[type=file],.converter select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .converter button,.converter .download{display:inline-block;margin:14px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .converter button:disabled{opacity:.5;cursor:not-allowed}
+    .preview{margin-top:20px;padding:14px;border:1px solid #dbe3ef;border-radius:10px}
+    .preview img{display:block;max-width:100%;max-height:400px;object-fit:contain;margin:12px auto}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    .note{padding:12px;border-radius:8px;background:#eff6ff}
+    @media(max-width:480px){.converter{padding:15px}}
+  </style>
+</head>
+<body>
+  <main class="converter">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>Image Converter</h1>
+    <p>Convert images to JPEG, PNG or WebP and download the result.</p>
+    <p class="note">Your image is processed locally in your browser and is not uploaded by this tool. JPEG does not support transparency; transparent areas become white.</p>
+
+    <label for="image-file">Choose an image</label>
+    <input id="image-file" type="file" accept="image/jpeg,image/png,image/webp">
+
+    <label for="output-format">Convert to</label>
+    <select id="output-format">
+      <option value="image/jpeg">JPEG (.jpg)</option>
+      <option value="image/png">PNG (.png)</option>
+      <option value="image/webp">WebP (.webp)</option>
+    </select>
+
+    <label for="quality">Quality for JPEG/WebP: <span id="quality-value">92%</span></label>
+    <input id="quality" type="range" min="10" max="100" step="1" value="92" style="width:100%">
+    <p>PNG uses lossless encoding; the quality slider does not affect PNG output.</p>
+
+    <button id="convert-button" type="button" disabled>Convert image</button>
+    <button id="reset-button" type="button">Reset</button>
+    <p id="status" class="status" role="status" aria-live="polite">Choose an image to begin.</p>
+
+    <section id="result" class="preview" hidden>
+      <h2>Converted image</h2>
+      <img id="result-image" alt="Converted image preview">
+      <p id="result-info"></p>
+      <a id="download" class="download" hidden>Download converted image</a>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const fileInput = $("image-file");
+      const formatInput = $("output-format");
+      const qualityInput = $("quality");
+      const qualityValue = $("quality-value");
+      const convertButton = $("convert-button");
+      const resetButton = $("reset-button");
+      const status = $("status");
+      const result = $("result");
+      const resultImage = $("result-image");
+      const resultInfo = $("result-info");
+      const download = $("download");
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      const MAX_PIXELS = 40000000;
+      let file = null;
+      let sourceUrl = null;
+      let resultUrl = null;
+      let image = null;
+      let generation = 0;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function formatBytes(n) {
+        return n < 1024 ? n + " B" :
+          n < 1048576 ? (n / 1024).toFixed(1) + " KB" :
+          (n / 1048576).toFixed(2) + " MB";
+      }
+
+      function clearResult() {
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+        resultUrl = null;
+        resultImage.removeAttribute("src");
+        resultInfo.textContent = "";
+        download.removeAttribute("href");
+        download.hidden = true;
+        result.hidden = true;
+      }
+
+      function reset() {
+        generation++;
+        file = null;
+        image = null;
+        fileInput.value = "";
+        convertButton.disabled = true;
+        clearResult();
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+        say("Choose an image to begin.");
+      }
+
+      fileInput.addEventListener("change", () => {
+        const id = ++generation;
+        file = null;
+        image = null;
+        convertButton.disabled = true;
+        clearResult();
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = null;
+
+        const selected = fileInput.files && fileInput.files[0];
+        if (!selected) {
+          say("Choose an image to begin.");
+          return;
+        }
+
+        if (!["image/jpeg", "image/png", "image/webp"].includes(selected.type)) {
+          fileInput.value = "";
+          say("Choose a JPEG, PNG or WebP image.", "error");
+          return;
+        }
+        if (!selected.size || selected.size > MAX_FILE_SIZE) {
+          fileInput.value = "";
+          say(selected.size ? "Maximum file size is 20 MB." : "The selected file is empty.", "error");
+          return;
+        }
+
+        say("Loading image…");
+        const url = URL.createObjectURL(selected);
+        const img = new Image();
+
+        img.onload = () => {
+          if (id !== generation) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          if (!img.naturalWidth || !img.naturalHeight ||
+              img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+            URL.revokeObjectURL(url);
+            say("This image is too large to process safely.", "error");
+            return;
+          }
+          file = selected;
+          image = img;
+          sourceUrl = url;
+          convertButton.disabled = false;
+          say(`Image loaded: ${img.naturalWidth} × ${img.naturalHeight} pixels.`, "success");
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (id === generation) say("Unable to open this image. Try another file.", "error");
+        };
+        img.src = url;
+      });
+
+      qualityInput.addEventListener("input", () => {
+        qualityValue.textContent = qualityInput.value + "%";
+      });
+
+      formatInput.addEventListener("change", clearResult);
+
+      convertButton.addEventListener("click", async () => {
+        if (!file || !image) {
+          say("Choose an image first.", "error");
+          return;
+        }
+
+        const id = ++generation;
+        convertButton.disabled = true;
+        clearResult();
+        say("Converting image…");
+
+        try {
+          await new Promise(resolve => setTimeout(resolve, 0));
+          if (id !== generation) return;
+
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          const context = canvas.getContext("2d");
+          if (!context) throw new Error("Canvas is not supported by this browser.");
+
+          if (formatInput.value === "image/jpeg") {
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          context.drawImage(image, 0, 0);
+
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob(
+              value => value ? resolve(value) : reject(new Error("Image conversion failed.")),
+              formatInput.value,
+              Number(qualityInput.value) / 100
+            );
+          });
+
+          if (id !== generation) return;
+          if (blob.type !== formatInput.value) {
+            throw new Error("This output format is not supported by your browser. Try JPEG or PNG.");
+          }
+
+          resultUrl = URL.createObjectURL(blob);
+          resultImage.src = resultUrl;
+
+          const difference = file.size - blob.size;
+          let comparison = difference > 0
+            ? `Size reduced by ${((difference / file.size) * 100).toFixed(1)}%.`
+            : difference < 0
+              ? `Output is ${((Math.abs(difference) / file.size) * 100).toFixed(1)}% larger.`
+              : "File size is unchanged.";
+
+          resultInfo.textContent =
+            `${blob.type.replace("image/", "").toUpperCase()} · ${image.naturalWidth} × ${image.naturalHeight} pixels · ${formatBytes(blob.size)}. ${comparison}`;
+
+          const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+          const extension = blob.type === "image/jpeg" ? "jpg" :
+            blob.type === "image/webp" ? "webp" : "png";
+
+          download.href = resultUrl;
+          download.download = `${baseName}-converted.${extension}`;
+          download.hidden = false;
+          result.hidden = false;
+          say("Conversion complete. Preview and download your image.", "success");
+        } catch (error) {
+          if (id === generation) say(error.message || "Conversion failed.", "error");
+        } finally {
+          if (id === generation) convertButton.disabled = !image;
+        }
+      });
+
+      resetButton.addEventListener("click", reset);
+      window.addEventListener("pagehide", () => {
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+      });
+    })();
+  </script>
+</body>
+</html>
