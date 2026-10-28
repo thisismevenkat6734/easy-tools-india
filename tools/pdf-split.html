@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Split PDF files online in your browser. Extract selected page ranges or download individual PDF pages.">
+  <meta name="theme-color" content="#2563eb">
+  <title>PDF Splitter | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .split-tool{width:min(94%,800px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .split-tool h1{margin-top:0}
+    .split-tool label{display:block;margin:14px 0 6px;font-weight:600}
+    .split-tool input[type=file],.split-tool input[type=number],.split-tool select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .split-tool button,.split-tool .download{display:inline-block;margin:10px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .split-tool button:disabled{opacity:.5;cursor:not-allowed}
+    .range-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .note{padding:12px;background:#eff6ff;border-radius:8px}
+    .status{min-height:24px;overflow-wrap:anywhere}.error{color:#b91c1c}.success{color:#166534}
+    .output-list{display:grid;gap:10px;margin-top:18px}
+    .output-item{padding:12px;border:1px solid #dbe3ef;border-radius:8px;overflow-wrap:anywhere}
+    @media(max-width:480px){.split-tool{padding:15px}.range-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="split-tool">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>PDF Splitter</h1>
+    <p>Extract selected pages or split a PDF into individual page files.</p>
+    <p class="note">PDF processing happens in your browser. Your document is not uploaded by this tool. Password-protected or damaged PDFs may not be supported.</p>
+
+    <label for="pdf-file">Choose a PDF file</label>
+    <input id="pdf-file" type="file" accept=".pdf,application/pdf">
+
+    <p id="page-count">Choose a PDF to see its page count.</p>
+
+    <label for="split-mode">Split method</label>
+    <select id="split-mode">
+      <option value="range">Extract a page range into one PDF</option>
+      <option value="individual">Create one PDF per page</option>
+    </select>
+
+    <div id="range-options" class="range-grid">
+      <div>
+        <label for="start-page">First page</label>
+        <input id="start-page" type="number" min="1" step="1" value="1" inputmode="numeric">
+      </div>
+      <div>
+        <label for="end-page">Last page</label>
+        <input id="end-page" type="number" min="1" step="1" value="1" inputmode="numeric">
+      </div>
+    </div>
+
+    <button id="split-button" type="button" disabled>Split PDF</button>
+    <button id="reset-button" type="button">Reset</button>
+    <p id="status" class="status" role="status" aria-live="polite">Choose a PDF to begin.</p>
+
+    <section id="outputs" class="output-list" hidden>
+      <h2>Download your PDFs</h2>
+      <div id="output-items" class="output-list"></div>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" referrerpolicy="no-referrer"></script>
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const fileInput = $("pdf-file");
+      const pageCountText = $("page-count");
+      const modeInput = $("split-mode");
+      const rangeOptions = $("range-options");
+      const startInput = $("start-page");
+      const endInput = $("end-page");
+      const splitButton = $("split-button");
+      const resetButton = $("reset-button");
+      const status = $("status");
+      const outputs = $("outputs");
+      const outputItems = $("output-items");
+
+      const MAX_FILE_SIZE = 50 * 1024 * 1024;
+      const MAX_PAGES = 500;
+
+      let sourceFile = null;
+      let sourceBytes = null;
+      let pageCount = 0;
+      let busy = false;
+      let generation = 0;
+      let outputUrls = [];
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "status " + type;
+      }
+
+      function releaseOutputs() {
+        outputUrls.forEach(url => URL.revokeObjectURL(url));
+        outputUrls = [];
+        outputItems.replaceChildren();
+        outputs.hidden = true;
+      }
+
+      function updateControls() {
+        splitButton.disabled = busy || !sourceBytes || pageCount < 1;
+        rangeOptions.hidden = modeInput.value !== "range";
+      }
+
+      function reset() {
+        if (busy) return;
+        generation++;
+        sourceFile = null;
+        sourceBytes = null;
+        pageCount = 0;
+        fileInput.value = "";
+        startInput.value = "1";
+        endInput.value = "1";
+        pageCountText.textContent = "Choose a PDF to see its page count.";
+        releaseOutputs();
+        updateControls();
+        say("Choose a PDF to begin.");
+      }
+
+      function addOutput(blob, filename, label) {
+        const url = URL.createObjectURL(blob);
+        outputUrls.push(url);
+
+        const item = document.createElement("div");
+        item.className = "output-item";
+
+        const text = document.createElement("p");
+        text.textContent = `${label} · ${(blob.size / 1024).toFixed(1)} KB`;
+
+        const link = document.createElement("a");
+        link.className = "download";
+        link.href = url;
+        link.download = filename;
+        link.textContent = `Download ${filename}`;
+
+        item.append(text, link);
+        outputItems.append(item);
+      }
+
+      fileInput.addEventListener("change", async () => {
+        if (busy) return;
+        const id = ++generation;
+        sourceFile = null;
+        sourceBytes = null;
+        pageCount = 0;
+        releaseOutputs();
+        updateControls();
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          say("Choose a PDF to begin.");
+          return;
+        }
+
+        if (file.type !== "application/pdf" &&
+            !file.name.toLowerCase().endsWith(".pdf")) {
+          fileInput.value = "";
+          say("Please select a PDF file.", "error");
+          return;
+        }
+        if (!file.size || file.size > MAX_FILE_SIZE) {
+          fileInput.value = "";
+          say(file.size ? "Maximum PDF size is 50 MB." : "The selected file is empty.", "error");
+          return;
+        }
+
+        if (!window.PDFLib || !window.PDFLib.PDFDocument) {
+          say("The PDF library could not load. Check your internet connection.", "error");
+          return;
+        }
+
+        say("Reading PDF…");
+        try {
+          const bytes = await file.arrayBuffer();
+          if (id !== generation) return;
+
+          const pdf = await window.PDFLib.PDFDocument.load(bytes, {
+            ignoreEncryption: false,
+            updateMetadata: false
+          });
+
+          const count = pdf.getPageCount();
+          if (count < 1) throw new Error("This PDF contains no pages.");
+          if (count > MAX_PAGES) throw new Error(`This tool supports up to ${MAX_PAGES} pages at a time.`);
+
+          sourceFile = file;
+          sourceBytes = bytes;
+          pageCount = count;
+          startInput.max = String(count);
+          endInput.max = String(count);
+          startInput.value = "1";
+          endInput.value = String(count);
+          pageCountText.textContent = `Total pages: ${count}`;
+          updateControls();
+          say("PDF loaded successfully. Choose how you want to split it.", "success");
+        } catch (error) {
+          if (id === generation) {
+            say(/encrypt|password/i.test(error.message || "")
+              ? "This PDF may be password-protected. Unlock it first and try again."
+              : "Could not read this PDF. It may be damaged or unsupported.", "error");
+          }
+        }
+      });
+
+      modeInput.addEventListener("change", updateControls);
+
+      async function splitPdf() {
+        if (busy || !sourceBytes || !sourceFile) return;
+
+        let indices;
+        if (modeInput.value === "range") {
+          const first = Number(startInput.value);
+          const last = Number(endInput.value);
+
+          if (!Number.isInteger(first) || !Number.isInteger(last) ||
+              first < 1 || last < first || last > pageCount) {
+            say(`Enter a valid page range between 1 and ${pageCount}.`, "error");
+            return;
+          }
+          indices = Array.from({length: last - first + 1}, (_, i) => first - 1 + i);
+        } else {
+          indices = Array.from({length: pageCount}, (_, i) => i);
+        }
+
+        busy = true;
+        const id = ++generation;
+        releaseOutputs();
+        updateControls();
+        say("Splitting PDF…");
+
+        try {
+          const { PDFDocument } = window.PDFLib;
+          const source = await PDFDocument.load(sourceBytes, {
+            ignoreEncryption: false,
+            updateMetadata: false
+          });
+
+          if (modeInput.value === "range") {
+            const result = await PDFDocument.create();
+            const pages = await result.copyPages(source, indices);
+            pages.forEach(page => result.addPage(page));
+            const bytes = await result.save();
+
+            if (id !== generation) return;
+
+            const blob = new Blob([bytes], {type: "application/pdf"});
+            const first = indices[0] + 1;
+            const last = indices[indices.length - 1] + 1;
+            const base = sourceFile.name.replace(/\.pdf$/i, "") || "document";
+
+            addOutput(blob, `${base}-pages-${first}-${last}.pdf`, `${indices.length} page(s)`);
+            say(`Created a PDF containing pages ${first}–${last}.`, "success");
+          } else {
+            for (let i = 0; i < indices.length; i++) {
+              if (id !== generation) return;
+
+              say(`Creating PDF ${i + 1} of ${indices.length}…`);
+              const onePage = await PDFDocument.create();
+              const [page] = await onePage.copyPages(source, [indices[i]]);
+              onePage.addPage(page);
+
+              const bytes = await onePage.save();
+              const blob = new Blob([bytes], {type: "application/pdf"});
+              const base = sourceFile.name.replace(/\.pdf$/i, "") || "document";
+
+              addOutput(blob, `${base}-page-${i + 1}.pdf`, `Page ${i + 1}`);
+            }
+
+            if (id !== generation) return;
+            say(`Created ${indices.length} individual PDF file(s).`, "success");
+          }
+
+          outputs.hidden = false;
+        } catch (error) {
+          releaseOutputs();
+          say(/encrypt|password/i.test(error.message || "")
+            ? "This PDF may be password-protected. Unlock it first and try again."
+            : "Could not split this PDF. Please check the file and try again.", "error");
+        } finally {
+          if (id === generation) {
+            busy = false;
+            updateControls();
+          }
+        }
+      }
+
+      splitButton.addEventListener("click", splitPdf);
+      resetButton.addEventListener("click", reset);
+
+      window.addEventListener("pagehide", () => {
+        outputUrls.forEach(url => URL.revokeObjectURL(url));
+      });
+
+      updateControls();
+    })();
+  </script>
+</body>
+</html>
