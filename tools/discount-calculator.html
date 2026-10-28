@@ -1,0 +1,179 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Calculate discounts, savings, and final sale prices with this free online discount calculator.">
+  <meta name="robots" content="index,follow">
+  <title>Free Discount Calculator Online | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:700px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:20px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit}
+    .action-button{border:0;border-radius:9px;padding:12px 18px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .results{margin-top:24px;padding:18px;border:1px solid #dbeafe;border-radius:12px;background:#eff6ff}
+    .result-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #dbeafe}
+    .result-row:last-child{border-bottom:0}
+    .result-value{font-weight:700;text-align:right;overflow-wrap:anywhere}
+    .final-price{font-size:1.35rem;color:#1d4ed8}
+    .status{margin-top:14px;color:#991b1b}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    [hidden]{display:none!important}
+    @media(max-width:480px){.tool-workspace{padding:16px}.result-row{gap:8px}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>Discount Calculator</h1>
+      <p>Find out how much you save during a sale and what you will pay after the discount.</p>  <div class="field">
+    <label for="original-price">Original price (₹)</label>
+    <input id="original-price" type="number" min="0" step="any" placeholder="e.g. 2000">
+  </div>
+
+  <div class="field">
+    <label for="discount-percent">Discount percentage (%)</label>
+    <input id="discount-percent" type="number" min="0" max="100" step="any" placeholder="e.g. 25">
+  </div>
+
+  <div class="field">
+    <label for="extra-discount">Additional discount (%) — optional</label>
+    <input id="extra-discount" type="number" min="0" max="100" step="any" placeholder="e.g. 10">
+    <p class="hint">If a second discount applies to the already discounted price, enter it here. The discounts are applied one after another.</p>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="calculate-button" type="button">Calculate Discount</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="results" class="results" hidden aria-live="polite">
+    <div class="result-row">
+      <span>Original price</span>
+      <span class="result-value" id="original-result"></span>
+    </div>
+    <div class="result-row">
+      <span>First discount</span>
+      <span class="result-value" id="first-result"></span>
+    </div>
+    <div class="result-row" id="extra-row" hidden>
+      <span>Additional discount</span>
+      <span class="result-value" id="extra-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Total savings</span>
+      <span class="result-value" id="savings-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Effective discount</span>
+      <span class="result-value" id="effective-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Final price</span>
+      <span class="result-value final-price" id="final-result"></span>
+    </div>
+  </section>
+
+  <p class="hint">This calculator estimates the price before taxes, delivery charges, or other fees. Calculations run in your browser.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const originalInput = document.getElementById("original-price");
+      const discountInput = document.getElementById("discount-percent");
+      const extraInput = document.getElementById("extra-discount");
+      const results = document.getElementById("results");
+      const status = document.getElementById("status");
+      const extraRow = document.getElementById("extra-row");
+
+      const money = value => new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 2
+      }).format(value);
+
+      function readNumber(input, label, optional = false) {
+        const raw = input.value.trim();
+
+        if (raw === "" && optional) return 0;
+        if (raw === "") throw new Error("Please enter " + label + ".");
+
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          throw new Error("Please enter a valid number for " + label + ".");
+        }
+        return value;
+      }
+
+      function calculate() {
+        results.hidden = true;
+        status.textContent = "";
+
+        try {
+          const original = readNumber(originalInput, "the original price");
+          const discount = readNumber(discountInput, "the discount percentage");
+          const extra = readNumber(extraInput, "the additional discount", true);
+
+          if (original < 0) throw new Error("Original price cannot be negative.");
+          if (discount < 0 || discount > 100) {
+            throw new Error("Discount must be between 0% and 100%.");
+          }
+          if (extra < 0 || extra > 100) {
+            throw new Error("Additional discount must be between 0% and 100%.");
+          }
+
+          const firstSavings = original * discount / 100;
+          const afterFirst = original - firstSavings;
+          const extraSavings = afterFirst * extra / 100;
+          const finalPrice = afterFirst - extraSavings;
+          const totalSavings = original - finalPrice;
+          const effectiveDiscount = original === 0 ? 0 : totalSavings / original * 100;
+
+          const values = {
+            "original-result": money(original),
+            "first-result": money(firstSavings),
+            "extra-result": money(extraSavings),
+            "savings-result": money(totalSavings),
+            "effective-result": effectiveDiscount.toFixed(2) + "%",
+            "final-result": money(finalPrice)
+          };
+
+          Object.entries(values).forEach(([id, value]) => {
+            document.getElementById(id).textContent = value;
+          });
+
+          extraRow.hidden = extra === 0;
+          results.hidden = false;
+        } catch (error) {
+          status.textContent = error.message || "Unable to calculate the discount.";
+        }
+      }
+
+      function reset() {
+        originalInput.value = "";
+        discountInput.value = "";
+        extraInput.value = "";
+        results.hidden = true;
+        extraRow.hidden = true;
+        status.textContent = "";
+      }
+
+      document.getElementById("calculate-button").addEventListener("click", calculate);
+      document.getElementById("reset-button").addEventListener("click", reset);
+    })();
+  </script></body>
+</html>
