@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Crop images online for free. Select a crop area, preview the result, and download it directly in your browser.">
+  <meta name="theme-color" content="#2563eb">
+  <title>Image Cropper | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .crop-tool{width:min(94%,850px);margin:28px auto;padding:22px;background:#fff;color:#172033;border:1px solid #dbe3ef;border-radius:16px;box-shadow:0 8px 28px #14285012}
+    .crop-tool h1{margin-top:0}
+    .crop-tool label{display:block;margin:14px 0 6px;font-weight:600}
+    .crop-tool input[type=file],.crop-tool select{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+    .crop-tool button,.crop-tool .download{display:inline-block;margin:12px 8px 0 0;padding:11px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;font-weight:600;text-decoration:none;cursor:pointer}
+    .crop-tool button:disabled{opacity:.5;cursor:not-allowed}
+    .crop-stage{position:relative;display:flex;justify-content:center;align-items:center;margin-top:18px;min-height:160px;max-height:65vh;overflow:hidden;background:#f1f5f9;border:1px solid #dbe3ef;border-radius:10px;touch-action:pan-y}
+    .crop-stage canvas{display:block;max-width:100%;max-height:62vh;object-fit:contain;touch-action:none;cursor:crosshair}
+    .crop-preview{margin-top:20px;padding:14px;border:1px solid #dbe3ef;border-radius:10px}
+    .crop-preview img{display:block;max-width:100%;max-height:400px;object-fit:contain;margin:12px auto}
+    .crop-status{min-height:24px;overflow-wrap:anywhere}.crop-error{color:#b91c1c}.crop-success{color:#166534}
+    .crop-note{padding:12px;border-radius:8px;background:#eff6ff}
+    @media(max-width:480px){.crop-tool{padding:15px}}
+  </style>
+</head>
+<body>
+  <main class="crop-tool">
+    <p><a href="../index.html">← Back to EasyTools India</a></p>
+    <h1>Image Cropper</h1>
+    <p>Choose an area of your image and crop it to the size you need.</p>
+    <p class="crop-note">Your image is processed in your browser and is not uploaded by this tool. Drag across the image to select a crop area.</p>
+
+    <label for="crop-file">Choose image (JPEG, PNG or WebP)</label>
+    <input id="crop-file" type="file" accept="image/jpeg,image/png,image/webp">
+
+    <label for="crop-format">Output format</label>
+    <select id="crop-format">
+      <option value="image/png">PNG</option>
+      <option value="image/jpeg">JPEG</option>
+      <option value="image/webp">WebP</option>
+    </select>
+
+    <div id="crop-stage" class="crop-stage" hidden>
+      <canvas id="crop-canvas" aria-label="Image crop selection area"></canvas>
+    </div>
+
+    <p id="crop-dimensions">Select an image to begin.</p>
+    <button id="crop-button" type="button" disabled>Crop image</button>
+    <button id="clear-button" type="button" disabled>Clear selection</button>
+    <button id="reset-button" type="button">Reset</button>
+    <p id="crop-status" class="crop-status" role="status" aria-live="polite">Choose an image to begin.</p>
+
+    <section id="crop-result" class="crop-preview" hidden>
+      <h2>Cropped image</h2>
+      <img id="crop-result-image" alt="Cropped image preview">
+      <p id="crop-result-info"></p>
+      <a id="crop-download" class="download" hidden>Download cropped image</a>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = id => document.getElementById(id);
+      const fileInput = $("crop-file");
+      const formatInput = $("crop-format");
+      const stage = $("crop-stage");
+      const canvas = $("crop-canvas");
+      const ctx = canvas.getContext("2d");
+      const cropButton = $("crop-button");
+      const clearButton = $("clear-button");
+      const resetButton = $("reset-button");
+      const dimensions = $("crop-dimensions");
+      const status = $("crop-status");
+      const result = $("crop-result");
+      const resultImage = $("crop-result-image");
+      const resultInfo = $("crop-result-info");
+      const download = $("crop-download");
+
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      const MAX_PIXELS = 40000000;
+
+      let image = null;
+      let imageUrl = null;
+      let resultUrl = null;
+      let scale = 1;
+      let displayWidth = 0;
+      let displayHeight = 0;
+      let start = null;
+      let selection = null;
+      let dragging = false;
+      let pointerId = null;
+      let generation = 0;
+
+      function say(message, type = "") {
+        status.textContent = message;
+        status.className = "crop-status " + type;
+      }
+
+      function bytes(n) {
+        return n < 1024 ? n + " B" :
+          n < 1048576 ? (n / 1024).toFixed(1) + " KB" :
+          (n / 1048576).toFixed(2) + " MB";
+      }
+
+      function clearResult() {
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+        resultUrl = null;
+        resultImage.removeAttribute("src");
+        resultInfo.textContent = "";
+        download.removeAttribute("href");
+        download.hidden = true;
+        result.hidden = true;
+      }
+
+      function reset() {
+        generation++;
+        image = null;
+        selection = null;
+        start = null;
+        dragging = false;
+        pointerId = null;
+        fileInput.value = "";
+        stage.hidden = true;
+        canvas.width = 0;
+        canvas.height = 0;
+        cropButton.disabled = true;
+        clearButton.disabled = true;
+        dimensions.textContent = "Select an image to begin.";
+        clearResult();
+        if (imageUrl) URL.revokeObjectURL(imageUrl);
+        imageUrl = null;
+        say("Choose an image to begin.");
+      }
+
+      function point(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: Math.max(0, Math.min(displayWidth, (event.clientX - rect.left) * displayWidth / rect.width)),
+          y: Math.max(0, Math.min(displayHeight, (event.clientY - rect.top) * displayHeight / rect.height))
+        };
+      }
+
+      function normalizeRect(a, b) {
+        return {
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          w: Math.abs(b.x - a.x),
+          h: Math.abs(b.y - a.y)
+        };
+      }
+
+      function draw() {
+        if (!image) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(image, 0, 0, displayWidth, displayHeight);
+
+        if (selection && selection.w > 0 && selection.h > 0) {
+          const {x, y, w, h} = selection;
+          ctx.fillStyle = "rgba(0,0,0,.45)";
+          ctx.fillRect(0, 0, displayWidth, y);
+          ctx.fillRect(0, y, x, h);
+          ctx.fillRect(x + w, y, displayWidth - x - w, h);
+          ctx.fillRect(0, y + h, displayWidth, displayHeight - y - h);
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(x, y, w, h);
+          ctx.setLineDash([]);
+        }
+      }
+
+      function updateDimensions() {
+        if (!selection || selection.w < 1 || selection.h < 1) {
+          dimensions.textContent = image ?
+            `Original: ${image.naturalWidth} × ${image.naturalHeight} pixels. Drag to select an area.` :
+            "Select an image to begin.";
+          cropButton.disabled = true;
+          clearButton.disabled = !selection;
+          return;
+        }
+
+        const x1 = Math.round(selection.x / scale);
+        const y1 = Math.round(selection.y / scale);
+        const x2 = Math.round((selection.x + selection.w) / scale);
+        const y2 = Math.round((selection.y + selection.h) / scale);
+
+        dimensions.textContent = `Selected area: ${Math.max(1, x2-x1)} × ${Math.max(1, y2-y1)} pixels`;
+        cropButton.disabled = false;
+        clearButton.disabled = false;
+      }
+
+      function clearSelection() {
+        selection = null;
+        start = null;
+        dragging = false;
+        draw();
+        updateDimensions();
+        clearResult();
+        say("Selection cleared. Drag to select a new area.");
+      }
+
+      fileInput.addEventListener("change", () => {
+        const id = ++generation;
+        const file = fileInput.files && fileInput.files[0];
+        clearResult();
+        image = null;
+        selection = null;
+        cropButton.disabled = true;
+        clearButton.disabled = true;
+        stage.hidden = true;
+
+        if (imageUrl) URL.revokeObjectURL(imageUrl);
+        imageUrl = null;
+
+        if (!file) {
+          say("Choose an image to begin.");
+          return;
+        }
+        if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+          fileInput.value = "";
+          say("Choose a JPEG, PNG or WebP image.", "crop-error");
+          return;
+        }
+        if (!file.size || file.size > MAX_FILE_SIZE) {
+          fileInput.value = "";
+          say(file.size ? "Maximum image size is 20 MB." : "The selected file is empty.", "crop-error");
+          return;
+        }
+
+        say("Loading image…");
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+          if (id !== generation) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          if (img.naturalWidth * img.naturalHeight > MAX_PIXELS) {
+            URL.revokeObjectURL(url);
+            say("This image is too large to process safely.", "crop-error");
+            return;
+          }
+
+          image = img;
+          imageUrl = url;
+          scale = Math.min(1, 1000 / img.naturalWidth, 700 / img.naturalHeight);
+          displayWidth = Math.max(1, Math.round(img.naturalWidth * scale));
+          displayHeight = Math.max(1, Math.round(img.naturalHeight * scale));
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+          canvas.style.width = displayWidth + "px";
+          canvas.style.height = displayHeight + "px";
+          stage.hidden = false;
+          draw();
+          updateDimensions();
+          say("Image loaded. Drag across the image to select the crop area.", "crop-success");
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          if (id === generation) say("Unable to read this image. Try another file.", "crop-error");
+        };
+        img.src = url;
+      });
+
+      canvas.addEventListener("pointerdown", event => {
+        if (!image) return;
+        event.preventDefault();
+        pointerId = event.pointerId;
+        canvas.setPointerCapture(pointerId);
+        start = point(event);
+        selection = {x:start.x,y:start.y,w:0,h:0};
+        dragging = true;
+        clearResult();
+        draw();
+        updateDimensions();
+      });
+
+      canvas.addEventListener("pointermove", event => {
+        if (!dragging || event.pointerId !== pointerId) return;
+        selection = normalizeRect(start, point(event));
+        draw();
+        updateDimensions();
+      });
+
+      function finishDrag(event) {
+        if (!dragging || (event && event.pointerId !== pointerId)) return;
+        if (event) selection = normalizeRect(start, point(event));
+        dragging = false;
+        pointerId = null;
+        draw();
+        updateDimensions();
+        if (!selection || selection.w < 2 || selection.h < 2) {
+          selection = null;
+          draw();
+          updateDimensions();
+          say("Selection too small. Drag a larger area.", "crop-error");
+        } else {
+          say("Crop area selected. Tap Crop image to continue.", "crop-success");
+        }
+      }
+
+      canvas.addEventListener("pointerup", finishDrag);
+      canvas.addEventListener("pointercancel", () => finishDrag(null));
+
+      cropButton.addEventListener("click", async () => {
+        if (!image || !selection || selection.w < 2 || selection.h < 2) {
+          say("Select a crop area first.", "crop-error");
+          return;
+        }
+
+        const id = ++generation;
+        cropButton.disabled = true;
+        clearResult();
+        say("Cropping image…");
+
+        try {
+          const sx = Math.max(0, Math.floor(selection.x / scale));
+          const sy = Math.max(0, Math.floor(selection.y / scale));
+          const ex = Math.min(image.naturalWidth, Math.ceil((selection.x + selection.w) / scale));
+          const ey = Math.min(image.naturalHeight, Math.ceil((selection.y + selection.h) / scale));
+          const w = ex - sx;
+          const h = ey - sy;
+
+          if (w < 1 || h < 1 || w * h > MAX_PIXELS) {
+            throw new Error("Invalid crop dimensions. Select another area.");
+          }
+
+          const output = document.createElement("canvas");
+          output.width = w;
+          output.height = h;
+          const context = output.getContext("2d");
+          if (!context) throw new Error("Canvas is not supported by this browser.");
+
+          if (formatInput.value === "image/jpeg") {
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, w, h);
+          }
+          context.drawImage(image, sx, sy, w, h, 0, 0, w, h);
+
+          const blob = await new Promise((resolve, reject) => {
+            output.toBlob(b => b ? resolve(b) : reject(new Error("Image export failed.")), formatInput.value, 0.95);
+          });
+
+          if (id !== generation) return;
+          if (blob.type !== formatInput.value) {
+            throw new Error("Your browser does not support this output format. Try PNG or JPEG.");
+          }
+
+          resultUrl = URL.createObjectURL(blob);
+          resultImage.src = resultUrl;
+          resultInfo.textContent = `${w} × ${h} pixels · ${bytes(blob.size)} · ${blob.type.replace("image/","").toUpperCase()}`;
+
+          const baseName = (fileInput.files[0].name.replace(/\.[^.]+$/, "") || "image");
+          const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
+          download.href = resultUrl;
+          download.download = `${baseName}-cropped.${ext}`;
+          download.hidden = false;
+          result.hidden = false;
+          say("Image cropped successfully. Preview and download the result.", "crop-success");
+        } catch (error) {
+          if (id === generation) say(error.message || "Cropping failed.", "crop-error");
+        } finally {
+          if (id === generation) cropButton.disabled = !selection;
+        }
+      });
+
+      formatInput.addEventListener("change", clearResult);
+      clearButton.addEventListener("click", clearSelection);
+      resetButton.addEventListener("click", reset);
+
+      window.addEventListener("pagehide", () => {
+        if (imageUrl) URL.revokeObjectURL(imageUrl);
+        if (resultUrl) URL.revokeObjectURL(resultUrl);
+      });
+    })();
+  </script>
+</body>
+</html>
