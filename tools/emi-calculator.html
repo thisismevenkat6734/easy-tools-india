@@ -1,0 +1,189 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Calculate monthly loan EMI, total interest payable and total repayment using this free online EMI calculator.">
+  <meta name="robots" content="index,follow">
+  <title>Free EMI Calculator | EasyTools India</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/responsive.css">
+  <style>
+    .tool-workspace{max-width:760px;margin:32px auto;padding:24px;border:1px solid #e2e8f0;border-radius:16px;background:#fff;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+    .tool-workspace h1{margin-top:0}
+    .field{margin:20px 0}
+    .field label{display:block;font-weight:600;margin-bottom:8px}
+    .field input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit}
+    .action-button{border:0;border-radius:9px;padding:12px 18px;font:inherit;font-weight:600;cursor:pointer;background:#2563eb;color:#fff}
+    .secondary-button{background:#e2e8f0;color:#0f172a}
+    .button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .results{margin-top:24px;padding:18px;border:1px solid #dbeafe;border-radius:12px;background:#eff6ff}
+    .result-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid #dbeafe}
+    .result-row:last-child{border-bottom:0}
+    .result-value{font-weight:700;text-align:right;overflow-wrap:anywhere}
+    .highlight{font-size:1.35rem;color:#1d4ed8}
+    .status{margin-top:14px;color:#991b1b}
+    .hint{font-size:.92rem;color:#64748b;line-height:1.6}
+    [hidden]{display:none!important}
+    @media(max-width:480px){.tool-workspace{padding:16px}.result-row{gap:8px}}
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="container" aria-label="Main navigation">
+      <a href="../index.html" class="logo">EasyTools India</a>
+      <a href="../index.html" class="nav-link">Home</a>
+    </nav>
+  </header>  <main class="container">
+    <section class="tool-workspace">
+      <h1>EMI Calculator</h1>
+      <p>Estimate your monthly loan instalment, total interest and total repayment.</p>  <div class="field">
+    <label for="loan-amount">Loan amount (₹)</label>
+    <input id="loan-amount" type="number" min="0.01" step="any" placeholder="e.g. 500000">
+  </div>
+
+  <div class="field">
+    <label for="interest-rate">Annual interest rate (%)</label>
+    <input id="interest-rate" type="number" min="0" max="1000" step="any" placeholder="e.g. 9">
+  </div>
+
+  <div class="field">
+    <label for="loan-years">Loan tenure (years)</label>
+    <input id="loan-years" type="number" min="0" max="100" step="any" placeholder="e.g. 5">
+  </div>
+
+  <div class="field">
+    <label for="loan-months">Additional tenure (months, optional)</label>
+    <input id="loan-months" type="number" min="0" max="11" step="1" placeholder="e.g. 6">
+    <p class="hint">Use years and optional extra months. For example, 2 years and 6 months equals 30 monthly instalments.</p>
+  </div>
+
+  <div class="button-row">
+    <button class="action-button" id="calculate-button" type="button">Calculate EMI</button>
+    <button class="action-button secondary-button" id="reset-button" type="button">Reset</button>
+  </div>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="results" class="results" hidden aria-live="polite">
+    <div class="result-row">
+      <span>Monthly EMI</span>
+      <span class="result-value highlight" id="emi-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Loan principal</span>
+      <span class="result-value" id="principal-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Total interest</span>
+      <span class="result-value" id="interest-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Total repayment</span>
+      <span class="result-value" id="total-result"></span>
+    </div>
+    <div class="result-row">
+      <span>Number of monthly instalments</span>
+      <span class="result-value" id="months-result"></span>
+    </div>
+  </section>
+
+  <p class="hint">This is an estimate based on a fixed interest rate and monthly reducing-balance calculation. Actual lender terms, fees, insurance and rounding may change your repayment.</p>
+</section>
+
+  </main>  <script>
+    (() => {
+      "use strict";
+
+      const amountInput = document.getElementById("loan-amount");
+      const rateInput = document.getElementById("interest-rate");
+      const yearsInput = document.getElementById("loan-years");
+      const extraMonthsInput = document.getElementById("loan-months");
+      const results = document.getElementById("results");
+      const status = document.getElementById("status");
+
+      const money = value => new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 2
+      }).format(value);
+
+      function readNumber(input, label, optional = false) {
+        const raw = input.value.trim();
+        if (raw === "" && optional) return 0;
+        if (raw === "") throw new Error("Please enter " + label + ".");
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          throw new Error("Please enter a valid number for " + label + ".");
+        }
+        return value;
+      }
+
+      function calculate() {
+        results.hidden = true;
+        status.textContent = "";
+
+        try {
+          const principal = readNumber(amountInput, "the loan amount");
+          const annualRate = readNumber(rateInput, "the annual interest rate");
+          const years = readNumber(yearsInput, "the loan tenure in years");
+          const extraMonths = readNumber(extraMonthsInput, "the additional months", true);
+
+          if (principal <= 0) throw new Error("Loan amount must be greater than zero.");
+          if (annualRate < 0 || annualRate > 1000) {
+            throw new Error("Annual interest rate must be between 0 and 1000%.");
+          }
+          if (years < 0 || years > 100) {
+            throw new Error("Years must be between 0 and 100.");
+          }
+          if (!Number.isInteger(extraMonths) || extraMonths < 0 || extraMonths > 11) {
+            throw new Error("Additional months must be a whole number from 0 to 11.");
+          }
+
+          const totalMonths = Math.round(years * 12) + extraMonths;
+          if (totalMonths < 1 || totalMonths > 1200) {
+            throw new Error("Loan tenure must be between 1 and 1200 months.");
+          }
+
+          const monthlyRate = annualRate / 1200;
+          let emi;
+
+          if (monthlyRate === 0) {
+            emi = principal / totalMonths;
+          } else {
+            const factor = Math.pow(1 + monthlyRate, totalMonths);
+            emi = principal * monthlyRate * factor / (factor - 1);
+          }
+
+          const totalPayment = emi * totalMonths;
+          const totalInterest = totalPayment - principal;
+
+          if (![emi, totalPayment, totalInterest].every(Number.isFinite)) {
+            throw new Error("These values are too large to calculate reliably.");
+          }
+
+          document.getElementById("emi-result").textContent = money(emi);
+          document.getElementById("principal-result").textContent = money(principal);
+          document.getElementById("interest-result").textContent = money(Math.max(0, totalInterest));
+          document.getElementById("total-result").textContent = money(totalPayment);
+          document.getElementById("months-result").textContent = totalMonths.toLocaleString("en-IN");
+
+          results.hidden = false;
+        } catch (error) {
+          status.textContent = error.message || "Unable to calculate EMI.";
+        }
+      }
+
+      function reset() {
+        amountInput.value = "";
+        rateInput.value = "";
+        yearsInput.value = "";
+        extraMonthsInput.value = "";
+        results.hidden = true;
+        status.textContent = "";
+      }
+
+      document.getElementById("calculate-button").addEventListener("click", calculate);
+      document.getElementById("reset-button").addEventListener("click", reset);
+    })();
+  </script></body>
+        </html>
