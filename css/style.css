@@ -836,3 +836,42 @@ p {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 14. Sponsored advertisement button */
+
+.sponsored-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 22px auto 0;
+}
+
+.sponsored-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--color-primary-dark);
+  font-weight: 700;
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.sponsored-button:hover {
+  background: #e9f3ff;
+  color: var(--color-primary-dark);
+  transform: translateY(-2px);
+}
+
+.sponsored-label {
+  color: #d2e7f8;
+  font-size: 0.75rem;
+}
+
